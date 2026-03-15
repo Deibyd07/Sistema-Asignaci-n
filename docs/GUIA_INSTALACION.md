@@ -77,6 +77,24 @@ cd backend
 
 ### 5.1 Instalar dependencias de Python
 
+Primero crear y activar un entorno virtual:
+
+En Windows (PowerShell):
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+```
+
+En macOS/Linux:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Luego instalar dependencias:
+
 Ejecutar:
 
 ```bash

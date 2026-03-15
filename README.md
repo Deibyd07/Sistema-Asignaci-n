@@ -1,6 +1,23 @@
 # Sistema de asignación de salones
 
+[![Django](https://img.shields.io/badge/Django-%3E%3D5.1%20%3C6.0-092E20?logo=django&logoColor=white)](https://www.djangoproject.com/)
+[![Django REST Framework](https://img.shields.io/badge/DRF-%3E%3D3.15%20%3C4.0-A30000?logo=django&logoColor=white)](https://www.django-rest-framework.org/)
+[![Python](https://img.shields.io/badge/Python-%3E%3D3.10-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![React](https://img.shields.io/badge/React-%5E19.0.0-61DAFB?logo=react&logoColor=black)](https://react.dev/)
+[![Vite](https://img.shields.io/badge/Vite-%5E6.2.0-646CFF?logo=vite&logoColor=white)](https://vite.dev/)
+[![SQLite](https://img.shields.io/badge/SQLite-Local%20Dev-003B57?logo=sqlite&logoColor=white)](https://sqlite.org/)
+[![Supabase PostgreSQL](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
+[![Tests](https://img.shields.io/github/actions/workflow/status/LuisCPedraza/Sistema-Asignaci-n/ci.yml?branch=main&label=Tests)](https://github.com/LuisCPedraza/Sistema-Asignaci-n/actions/workflows/ci.yml)
+[![Deploy](https://img.shields.io/badge/Deploy-Pendiente-lightgrey)](https://github.com/LuisCPedraza/Sistema-Asignaci-n/deployments)
+
 Plataforma para gestionar la asignación de salones, horarios, grupos y recursos académicos, con una interfaz web para operación por roles.
+
+## Documentación principal
+
+- `docs/GUIA_INSTALACION.md`: instalación y ejecución local paso a paso.
+- `docs/architecture.md`: arquitectura técnica y convenciones del stack.
+- `docs/CONSTITUCION_RISE.md`: simulación académica de constitución empresarial.
+- `docs/PLAN_NEGOCIO_RISE.md`: visión de negocio y metas estratégicas.
 
 ## Contexto del proyecto
 
@@ -69,9 +86,11 @@ Flujo base:
 |   |-- manage.py
 |   `-- requirements.txt
 |-- docs/
-|   `-- architecture.md
+|   |-- architecture.md
+|   |-- GUIA_INSTALACION.md
+|   |-- CONSTITUCION_RISE.md
+|   `-- PLAN_NEGOCIO_RISE.md
 |-- frontend/
-|   |-- public/
 |   |-- src/
 |   |   |-- App.jsx
 |   |   |-- main.jsx
