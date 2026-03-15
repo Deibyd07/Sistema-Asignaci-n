@@ -1,16 +1,16 @@
 # Arquitectura propuesta
 
-## Patron elegido
+## Patrón elegido
 
-Para este stack la mejor decision es **MVT en Django**, no MVC clasico.
+Para este stack, la mejor decisión es **MVT en Django**, no MVC clásico.
 
-### Por que
+### Por qué
 
 - Django implementa MVT de forma nativa.
-- Intentar forzarlo a MVC suele terminar en nombres artificiales y mas friccion.
-- Como la interfaz principal sera React, el backend de Django debe centrarse en API, seguridad, reglas de negocio e integracion con datos.
+- Intentar forzarlo a MVC suele terminar en nombres artificiales y más fricción.
+- Como la interfaz principal será React, el backend de Django debe centrarse en API, seguridad, reglas de negocio e integración con datos.
 
-## Como se traduce en este proyecto
+## Cómo se traduce en este proyecto
 
 ### Frontend
 
@@ -24,15 +24,15 @@ Para este stack la mejor decision es **MVT en Django**, no MVC clasico.
 - `views.py`: endpoints o vistas API del dominio.
 - `services/`: reglas de negocio reutilizables para no recargar las vistas.
 - `urls.py`: mapeo de rutas del dominio.
-- `config/`: settings globales, urls raiz y arranque del proyecto.
+- `config/`: settings globales, URLs raíz y arranque del proyecto.
 
 ## Rol de Supabase
 
-En este proyecto Supabase se usa primero como **PostgreSQL administrado**.
+En este proyecto, Supabase se usa primero como **PostgreSQL administrado**.
 
-Tambien se deja preparado para poder sumar despues:
+También se deja preparado para poder sumar después:
 
-- autenticacion,
+- autenticación,
 - storage,
 - realtime.
 
@@ -48,9 +48,9 @@ Django URLs -> Views -> Services -> Models -> Supabase PostgreSQL
 
 ## Convenciones recomendadas
 
-- Crear apps Django por dominio, no por tipo tecnico.
-- Mantener la logica de negocio en `services/`.
-- Dejar `views.py` delgado: validacion de entrada, llamada a servicio y respuesta.
+- Crear apps Django por dominio, no por tipo técnico.
+- Mantener la lógica de negocio en `services/`.
+- Dejar `views.py` delgado: validación de entrada, llamada a servicio y respuesta.
 - Usar Supabase como infraestructura de datos, no como lugar para duplicar reglas que ya viven en Django.
 - Reservar Templates de Django para casos puntuales como admin, emails o paneles internos.
 
