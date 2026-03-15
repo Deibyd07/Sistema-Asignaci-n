@@ -14,10 +14,10 @@ Plataforma para gestionar la asignación de salones, horarios, grupos y recursos
 
 ## Documentación principal
 
-- `docs/GUIA_INSTALACION.md`: instalación y ejecución local paso a paso.
-- `docs/architecture.md`: arquitectura técnica y convenciones del stack.
-- `docs/CONSTITUCION_RISE.md`: simulación académica de constitución empresarial.
-- `docs/PLAN_NEGOCIO_RISE.md`: visión de negocio y metas estratégicas.
+- [docs/GUIA_INSTALACION.md](docs/GUIA_INSTALACION.md): instalación y ejecución local paso a paso.
+- [docs/architecture.md](docs/architecture.md): arquitectura técnica y convenciones del stack.
+- [docs/CONSTITUCION_RISE.md](docs/CONSTITUCION_RISE.md): simulación académica de constitución empresarial.
+- [docs/PLAN_NEGOCIO_RISE.md](docs/PLAN_NEGOCIO_RISE.md): visión de negocio y metas estratégicas.
 
 ## Contexto del proyecto
 
@@ -138,4 +138,4 @@ python manage.py runserver
 
 ## Documento complementario
 
-Para más detalle técnico de arquitectura revisar: `docs/architecture.md`.
+Para más detalle técnico de arquitectura revisar: [docs/architecture.md](docs/architecture.md).
