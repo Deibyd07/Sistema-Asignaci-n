@@ -13,13 +13,13 @@
 |Parte|Rol|Datos|
 |-|-|-|
 |Universidad del Valle — Seccional Zarzal|**EL CLIENTE**|Calle 14 # 14-00, Zarzal, Valle del Cauca · NIT: 890.399.694-0|
-|RISE S.A.S.|**EL DESARROLLADOR**|Zarzal, Valle del Cauca, Colombia · NIT: 900-XXX-XXX-X (Simulado)|
+|RISE S.A.S.|**EL DESARROLLADOR**|Zarzal, Valle del Cauca, Colombia · NIT: 900.000.000-1 (Simulado)|
 
 En el municipio de Zarzal, Departamento del Valle del Cauca, República de Colombia, a los \_\_\_ días del mes de \_\_\_\_\_\_\_\_\_\_ de 2026, se celebra el presente Contrato de Desarrollo de Software entre:
 
-**EL CLIENTE:** Universidad del Valle — Seccional Zarzal · NIT: 890.399.694-0 · Dirección: Calle 14 # 14-00, Zarzal, Valle del Cauca · Representante Legal: \[Nombre del Director de Seccional] · Cargo: Director Seccional.
+**EL CLIENTE:** Universidad del Valle — Seccional Zarzal · NIT: 890.399.694-0 · Dirección: Calle 14 # 14-00, Zarzal, Valle del Cauca · Representante Legal: JUAN CARLOS MONCADA RENDON · Cargo: Director Seccional.
 
-**EL DESARROLLADOR:** RISE S.A.S. · NIT: 900-XXX-XXX-X (Simulado) · Dirección: Zarzal, Valle del Cauca, Colombia · Representante Legal: \[Nombre del Socio Fundador] · Cargo: Gerente General — Representante Legal.
+**EL DESARROLLADOR:** RISE S.A.S. · NIT: 900.000.000-1 (Simulado) · Dirección: Zarzal, Valle del Cauca, Colombia · Representante Legal: \[Nombre del Socio Fundador] · Cargo: Gerente General — Representante Legal.
 
 \---
 
@@ -53,14 +53,14 @@ En el marco del presente ejercicio académico, el pago estipulado es simbólico 
 
 |Concepto|Monto (CM$)|Condición de pago|
 |-|-|-|
-|Pago por sprint (× 5 sprints)|COP$ 1.000.000 c/u|50% al inicio del sprint · 50% al aprobar el entregable|
-|Primer pago — Sprint 1 (anticipo)|COP$ 500.000|Al inicio del Sprint 1|
-|Pago por aprobación de entregable|COP$ 500.000 c/sprint|Contra Acta de Aceptación firmada por EL CLIENTE|
-|**TOTAL DEL CONTRATO**|**COP$ 5.000.000**|Distribuido en los 5 sprints|
+|Pago por sprint (× 5 sprints)|CM$ 1.000.000 c/u|50% al inicio del sprint · 50% al aprobar el entregable|
+|Primer pago — Sprint 1 (anticipo)|CM$ 500.000|Al inicio del Sprint 1|
+|Pago por aprobación de entregable|CM$ 500.000 c/sprint|Contra Acta de Aceptación firmada por EL CLIENTE|
+|**TOTAL DEL CONTRATO**|**CM$ 5.000.000**|Distribuido en los 5 sprints|
 
 ### 2.3. Penalización por Entrega Tardía
 
-En caso de que EL DESARROLLADOR no entregue los entregables acordados dentro de la fecha límite de cada sprint, se aplicará una **penalización del 10 %** sobre el monto del sprint afectado (COP$ 100.000 por sprint), deducible del pago del sprint siguiente. La penalización no aplica cuando el retraso sea consecuencia de fuerza mayor debidamente documentada, conforme a la Cláusula 5.
+En caso de que EL DESARROLLADOR no entregue los entregables acordados dentro de la fecha límite de cada sprint, se aplicará una **penalización del 10 %** sobre el monto del sprint afectado (CM$ 100.000 por sprint), deducible del pago del sprint siguiente. La penalización no aplica cuando el retraso sea consecuencia de fuerza mayor debidamente documentada, conforme a la Cláusula 5.
 
 \---
 
@@ -135,7 +135,7 @@ Ambas partes se comprometen a mantener estricta confidencialidad sobre los térm
 
 El presente contrato se suscribe en el marco de un ejercicio académico del Curso de Gestión de Proyectos de Software, con carácter exclusivamente didáctico y sin fines comerciales. Las partes reconocen que:
 
-1. La relación «cliente–desarrollador» es simulada. El pago estipulado es simbólico en unidades monetarias académicas (COP$) y no refleja tarifas de mercado real.
+1. La relación «cliente–desarrollador» es simulada. El pago estipulado es simbólico en unidades monetarias académicas (CM$) y no refleja tarifas de mercado real.
 2. La capacidad máxima de trabajo del Equipo Desarrollador se limita a **5 horas semanales** por cada desarrollador y **5 horas semanales** del Scrum Master, priorizando el aprendizaje sobre los resultados funcionales.
 3. El objetivo principal es evaluar habilidades de gestión de proyectos (metodología, planificación, gestión de riesgos) y trabajo en equipo, bajo supervisión docente.
 4. Se empleará la metodología SCRUM con sprints de 2 semanas. Las tareas se seleccionarán en reuniones de Sprint Planning mediante acuerdo entre las partes, priorizando el Product Backlog definido por EL CLIENTE y ajustándose a la capacidad operativa del equipo.
@@ -151,27 +151,22 @@ El presente contrato se rige por las leyes de la República de Colombia, en part
 
 ## Firmas
 
-En constancia de lo anterior, las partes suscriben el presente contrato en dos (2) ejemplares del mismo tenor y valor, en la fecha y lugar indicados en el encabezado.
+En constancia de lo anterior, las partes suscriben el presente contrato en dos (2) ejemplares del mismo tenor y valor, el ___ de _______ de 2026, en Zarzal, Valle del Cauca. 
 
 |||
 |-|-|
-|**EL CLIENTE**|**Fecha:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
-|\[Nombre del Representante Legal]|**C.C. / NIT:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
+|**EL CLIENTE**|**Firma:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
+|\JUAN CARLOS MONCADA RENDON|**C.C. / NIT:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
 |Director Seccional — Universidad del Valle, Seccional Zarzal||
 |NIT: 890.399.694-0||
 
 |||
 |-|-|
-|**EL DESARROLLADOR**|**Fecha:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
+|**EL DESARROLLADOR**|**Firma:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
 |\[Nombre del Representante Legal de RISE S.A.S.]|**C.C. / NIT:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
 |Gerente General — RISE S.A.S.||
-|NIT: 900-XXX-XXX-X||
+|NIT: 900.000.000-1||
 
-|||
-|-|-|
-|**SUPERVISOR DOCENTE**|**Fecha:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
-|\[Nombre del Docente]|**C.C.:** \_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_\_|
-|Docente — Curso Gestión de Proyectos de Software||
 
 \---
 
@@ -204,7 +199,7 @@ Los siguientes entregables constituyen el alcance acordado para cada sprint. Cua
 
 ### Requisitos No Funcionales
 
-* **Rendimiento:** el algoritmo debe retornar resultados en tiempo razonable para el volumen de datos de la seccional (hasta \~100 asignaturas).
+* **Rendimiento:** el algoritmo debe retornar resultados en tiempo razonable para el volumen de datos de la seccional (hasta \~500 asignaturas).
 * **Seguridad:** autenticación con roles diferenciados; rutas protegidas en el backend Django.
 * **Usabilidad:** la interfaz debe ser legible y operable desde pantallas de escritorio y tablet sin entrenamiento especializado.
 * **Trazabilidad:** todo cambio manual en el horario queda registrado con usuario, fecha/hora y detalle del cambio.
