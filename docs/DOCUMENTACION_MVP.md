@@ -89,4 +89,4 @@ Las siguientes HU tienen prioridad **Should have** y no bloquean ningún flujo c
 
 ---
 
-*Documento elaborado con base en las Historias de Usuario del Sistema de Asignación de Salones · Universidad del Valle, Seccional Zarzal · 2026*
+· Universidad del Valle, Seccional Zarzal · 2026*
