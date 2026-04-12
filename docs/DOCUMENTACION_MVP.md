@@ -89,4 +89,4 @@ Las siguientes HU tienen prioridad **Should have** y no bloquean ningún flujo c
 
 ---
 
-· Universidad del Valle, Seccional Zarzal · 2026*
+· Universidad del Valle, Seccional Zarzal · 2026
