@@ -1,4 +1,4 @@
-from django.contrib.auth.models import User
+from django.contrib.auth.models import AnonymousUser, User
 from django.test import TestCase
 from django.urls import reverse
 from datetime import date, time
@@ -9,9 +9,13 @@ from .models import Role, UserProfile, WorkingDay
 from .services.config_service import (
     ConfigValidationError,
     create_academic_period,
+    create_space_type,
     create_time_slot,
     create_working_day,
+    update_academic_period,
+    update_space_type,
     update_time_slot,
+    update_working_day,
 )
 from .services.user_service import (
     UserEmailAlreadyExistsError,
@@ -145,6 +149,88 @@ class AuthenticationTests(BaseAuthTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
 
+    def test_logout_requires_refresh_token(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(reverse("auth-logout"), {}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("refresh token", str(response.data).lower())
+
+    def test_logout_rejects_invalid_refresh_token(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("auth-logout"),
+            {"refresh": "token-invalido"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("invalido", str(response.data).lower())
+
+    def test_refresh_returns_new_access_token(self):
+        login_response = self.client.post(
+            reverse("auth-login"),
+            {"email": "admin@test.com", "password": "adminpassword123"},
+            format="json",
+        )
+
+        refresh_response = self.client.post(
+            reverse("auth-refresh"),
+            {"refresh": login_response.data["refresh"]},
+            format="json",
+        )
+
+        self.assertEqual(refresh_response.status_code, status.HTTP_200_OK)
+        self.assertIn("access", refresh_response.data)
+
+    def test_blacklisted_refresh_token_cannot_be_refreshed(self):
+        login_response = self.client.post(
+            reverse("auth-login"),
+            {"email": "admin@test.com", "password": "adminpassword123"},
+            format="json",
+        )
+        access_token = login_response.data["access"]
+        refresh_token = login_response.data["refresh"]
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {access_token}")
+        logout_response = self.client.post(
+            reverse("auth-logout"),
+            {"refresh": refresh_token},
+            format="json",
+        )
+        self.assertEqual(logout_response.status_code, status.HTTP_204_NO_CONTENT)
+
+        refresh_response = self.client.post(
+            reverse("auth-refresh"),
+            {"refresh": refresh_token},
+            format="json",
+        )
+
+        self.assertEqual(refresh_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_me_returns_profile_as_null_for_superuser_without_profile(self):
+        superuser = User.objects.create_superuser(
+            username="root@test.com",
+            email="root@test.com",
+            password="superpassword123",
+        )
+
+        login_response = self.client.post(
+            reverse("auth-login"),
+            {"email": "root@test.com", "password": "superpassword123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+
+        me_response = self.client.get(reverse("auth-me"))
+
+        self.assertEqual(me_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(me_response.data["role"], "administrador")
+        self.assertIsNone(me_response.data["profile"]["id"])
+        self.assertIsNone(me_response.data["profile"]["is_active"])
+
 
 class UserManagementApiTests(BaseAuthTestCase):
     def setUp(self):
@@ -273,6 +359,50 @@ class UserManagementApiTests(BaseAuthTestCase):
 
         self.assertEqual(me_response.status_code, status.HTTP_200_OK)
         self.assertEqual(me_response.data["role"], "docente")
+
+    def test_admin_can_filter_users_by_role_status_and_search(self):
+        docente_user = self.create_user(
+            email="docente.filtro@test.com",
+            password="docentepassword123",
+            role=self.docente_role,
+            first_name="Dora",
+            last_name="Docente",
+        )
+        docente_user.profile.is_active = False
+        docente_user.profile.save(update_fields=["is_active", "updated_at"])
+
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        role_filtered = self.client.get(
+            reverse("users-list-create"),
+            {"role_id": self.coordinator_role.id},
+        )
+        self.assertEqual(role_filtered.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item["role"]["name"] == "Coordinador" for item in role_filtered.data))
+
+        active_filtered = self.client.get(
+            reverse("users-list-create"),
+            {"is_active": "false"},
+        )
+        self.assertEqual(active_filtered.status_code, status.HTTP_200_OK)
+        self.assertTrue(all(item["is_active"] is False for item in active_filtered.data))
+
+        search_filtered = self.client.get(
+            reverse("users-list-create"),
+            {"search": "Carlos"},
+        )
+        self.assertEqual(search_filtered.status_code, status.HTTP_200_OK)
+        self.assertTrue(any("Carlos" in item["first_name"] for item in search_filtered.data))
+
+    def test_invalid_is_active_filter_is_ignored(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        baseline = self.client.get(reverse("users-list-create"))
+        filtered = self.client.get(reverse("users-list-create"), {"is_active": "talvez"})
+
+        self.assertEqual(baseline.status_code, status.HTTP_200_OK)
+        self.assertEqual(filtered.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(filtered.data), len(baseline.data))
 
 
 class UserServiceTests(TestCase):
@@ -488,6 +618,86 @@ class SystemConfigApiTests(BaseAuthTestCase):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_admin_can_list_each_config_resource(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        self.client.post(
+            reverse("config-periods-list-create"),
+            {
+                "code": "2026-L",
+                "name": "Periodo listado",
+                "start_date": "2026-01-10",
+                "end_date": "2026-05-20",
+            },
+            format="json",
+        )
+        self.client.post(
+            reverse("config-working-days-list-create"),
+            {"day_of_week": 2, "name": "Martes"},
+            format="json",
+        )
+        self.client.post(
+            reverse("config-time-slots-list-create"),
+            {"name": "Franja listada", "start_time": "08:00:00", "end_time": "09:00:00"},
+            format="json",
+        )
+        self.client.post(
+            reverse("config-space-types-list-create"),
+            {"name": "Aula", "description": "Tipo aula"},
+            format="json",
+        )
+
+        periods_response = self.client.get(reverse("config-periods-list-create"))
+        days_response = self.client.get(reverse("config-working-days-list-create"))
+        slots_response = self.client.get(reverse("config-time-slots-list-create"))
+        types_response = self.client.get(reverse("config-space-types-list-create"))
+
+        self.assertEqual(periods_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(days_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(slots_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(types_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(periods_response.data), 1)
+        self.assertGreaterEqual(len(days_response.data), 1)
+        self.assertGreaterEqual(len(slots_response.data), 1)
+        self.assertGreaterEqual(len(types_response.data), 1)
+
+
+class PermissionUtilityTests(TestCase):
+    @classmethod
+    def setUpTestData(cls):
+        cls.admin_role, _ = Role.objects.get_or_create(name="Administrador")
+
+    def test_get_user_role_name_returns_none_for_anonymous(self):
+        from .permissions import get_user_role_name
+
+        self.assertIsNone(get_user_role_name(AnonymousUser()))
+
+    def test_get_user_role_name_returns_none_when_profile_is_missing(self):
+        from .permissions import get_user_role_name
+
+        user = User.objects.create_user(
+            username="sinperfil@test.com",
+            email="sinperfil@test.com",
+            password="password12345",
+        )
+
+        self.assertIsNone(get_user_role_name(user))
+
+    def test_has_allowed_roles_without_configured_roles_returns_true(self):
+        from .permissions import HasAllowedRoles
+
+        user = User.objects.create_user(
+            username="noperfiltwo@test.com",
+            email="noperfiltwo@test.com",
+            password="password12345",
+        )
+
+        request = type("Request", (), {"user": user})
+        view = type("View", (), {})
+
+        permission = HasAllowedRoles()
+        self.assertTrue(permission.has_permission(request, view))
+
 
 class ConfigServiceTests(TestCase):
     def test_create_period_validates_dates(self):
@@ -535,3 +745,99 @@ class ConfigServiceTests(TestCase):
         self.assertEqual(day.day_of_week, 2)
         self.assertEqual(day.name, "Martes")
         self.assertTrue(WorkingDay.objects.filter(id=day.id).exists())
+
+    def test_period_update_and_duplicate_code_validation(self):
+        first = create_academic_period(
+            code="2026-1",
+            name="Periodo 1",
+            start_date=date(2026, 1, 10),
+            end_date=date(2026, 5, 30),
+            is_active=True,
+        )
+        second = create_academic_period(
+            code="2026-2",
+            name="Periodo 2",
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 11, 30),
+            is_active=True,
+        )
+
+        updated = update_academic_period(
+            first,
+            code="2026-1A",
+            name="Periodo 1A",
+            start_date=date(2026, 1, 15),
+            end_date=date(2026, 6, 1),
+            is_active=False,
+        )
+
+        self.assertEqual(updated.code, "2026-1A")
+        self.assertFalse(updated.is_active)
+
+        with self.assertRaises(ConfigValidationError):
+            update_academic_period(
+                second,
+                code="2026-1A",
+                name="Duplicado",
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 11, 30),
+                is_active=True,
+            )
+
+    def test_working_day_update_and_duplicate_validation(self):
+        monday = create_working_day(day_of_week=1, name="Lunes", is_active=True)
+        tuesday = create_working_day(day_of_week=2, name="Martes", is_active=True)
+
+        updated = update_working_day(
+            monday,
+            day_of_week=3,
+            name="Miercoles",
+            is_active=False,
+        )
+        self.assertEqual(updated.day_of_week, 3)
+        self.assertFalse(updated.is_active)
+
+        with self.assertRaises(ConfigValidationError):
+            update_working_day(
+                tuesday,
+                day_of_week=3,
+                name="Martes",
+                is_active=True,
+            )
+
+    def test_time_slot_duplicate_validation(self):
+        create_time_slot(
+            name="Franja",
+            start_time=time(7, 0),
+            end_time=time(8, 0),
+            is_active=True,
+        )
+
+        with self.assertRaises(ConfigValidationError):
+            create_time_slot(
+                name="Franja",
+                start_time=time(7, 0),
+                end_time=time(8, 0),
+                is_active=True,
+            )
+
+    def test_space_type_update_and_duplicate_validation(self):
+        lab = create_space_type(name="Laboratorio", description="Lab", is_active=True)
+        aula = create_space_type(name="Aula", description="Clase", is_active=True)
+
+        updated = update_space_type(
+            lab,
+            name="Laboratorio Avanzado",
+            description="Lab de hardware",
+            is_active=False,
+        )
+        self.assertEqual(updated.name, "Laboratorio Avanzado")
+        self.assertFalse(updated.is_active)
+
+        with self.assertRaises(ConfigValidationError):
+            update_space_type(
+                aula,
+                name="Laboratorio Avanzado",
+                description="Duplicado",
+                is_active=True,
+            )
