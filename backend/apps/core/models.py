@@ -57,6 +57,60 @@ class AcademicPeriod(TimeStampedModel):
         return f"{self.code} - {self.name}"
 
 
+class AcademicProgram(TimeStampedModel):
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=120)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class Subject(TimeStampedModel):
+    CLASS_TYPE_PRESENCIAL = "presencial"
+    CLASS_TYPE_VIRTUAL = "virtual"
+    CLASS_TYPE_CHOICES = [
+        (CLASS_TYPE_PRESENCIAL, "Presencial"),
+        (CLASS_TYPE_VIRTUAL, "Virtual"),
+    ]
+
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=120)
+    class_type = models.CharField(max_length=20, choices=CLASS_TYPE_CHOICES)
+    credits = models.PositiveSmallIntegerField()
+    weekly_hours = models.PositiveSmallIntegerField()
+    capacity = models.PositiveIntegerField()
+    difficulty = models.PositiveIntegerField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["code"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class SubjectGroup(TimeStampedModel):
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="groups")
+    identifier = models.CharField(max_length=80)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["subject__code", "identifier"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["subject", "identifier"],
+                name="unique_subject_group_per_subject",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.subject.code} - {self.identifier}"
+
+
 class WorkingDay(TimeStampedModel):
     day_of_week = models.PositiveSmallIntegerField(unique=True)
     name = models.CharField(max_length=20, unique=True)
@@ -108,3 +162,39 @@ class SpaceType(TimeStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class SubjectOffering(TimeStampedModel):
+    subject = models.ForeignKey(Subject, on_delete=models.PROTECT, related_name="offerings")
+    subject_group = models.ForeignKey(
+        SubjectGroup,
+        on_delete=models.PROTECT,
+        related_name="subject_offerings",
+        null=True,
+        blank=True,
+    )
+    academic_program = models.ForeignKey(
+        AcademicProgram, on_delete=models.PROTECT, related_name="subject_offerings"
+    )
+    academic_period = models.ForeignKey(
+        AcademicPeriod, on_delete=models.PROTECT, related_name="subject_offerings"
+    )
+    semester = models.PositiveSmallIntegerField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["academic_period", "semester", "subject__code", "subject_group__identifier"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(semester__gte=1),
+                name="subject_offering_valid_semester",
+            ),
+            models.UniqueConstraint(
+                fields=["academic_period", "subject_group", "academic_program", "semester"],
+                name="unique_subject_offering_per_period_program_group_semester",
+            ),
+        ]
+
+    def __str__(self):
+        group_label = self.subject_group.identifier if self.subject_group else "Sin grupo"
+        return f"{self.subject.code} | {group_label} | {self.academic_program.code} | S{self.semester}"

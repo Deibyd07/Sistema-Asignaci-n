@@ -22,6 +22,8 @@ function App() {
   } = useAuthSession();
 
   const isAdmin = Boolean(authToken && currentUser?.role === "administrador");
+  const isCoordinator = Boolean(authToken && currentUser?.role === "coordinador");
+  const canUseProgrammingConfig = isAdmin || isCoordinator;
 
   const {
     roles,
@@ -52,7 +54,8 @@ function App() {
     resetResourceForm,
   } = useSystemConfig({
     authToken,
-    enabled: isAdmin,
+    enabled: canUseProgrammingConfig,
+    role: currentUser?.role,
   });
 
   const handleFormChange = (field, value) => {
@@ -77,8 +80,27 @@ function App() {
     );
   }
 
-  if (!isAdmin) {
+  if (!canUseProgrammingConfig) {
     return <RoleHomeView currentUser={currentUser} onLogout={handleLogout} />;
+  }
+
+  if (isCoordinator) {
+    return (
+      <main className="app-shell">
+        <div className="admin-page-stack">
+          <SystemConfigPanel
+            configState={configState}
+            onRefresh={refreshAll}
+            onFieldChange={handleFieldChange}
+            onSubmit={handleSubmit}
+            onEdit={handleConfigSelectEdit}
+            onDelete={handleDelete}
+            onCancel={resetResourceForm}
+            visibleSections={["subjectOfferings"]}
+          />
+        </div>
+      </main>
+    );
   }
 
   return (

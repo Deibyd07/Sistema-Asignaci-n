@@ -5,7 +5,16 @@ from datetime import date, time
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from .models import Role, UserProfile, WorkingDay
+from .models import (
+    AcademicPeriod,
+    AcademicProgram,
+    Role,
+    Subject,
+    SubjectGroup,
+    SubjectOffering,
+    UserProfile,
+    WorkingDay,
+)
 from .services.config_service import (
     ConfigValidationError,
     create_academic_period,
@@ -60,6 +69,254 @@ class BaseAuthTestCase(APITestCase):
         token = login_response.data["access"]
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
         return login_response
+
+
+class ProgrammingTests(BaseAuthTestCase):
+    def setUp(self):
+        self.admin_user = self.create_user(
+            email="admin@test.com",
+            password="adminpassword123",
+            role=self.admin_role,
+            first_name="Ana",
+            last_name="Admin",
+        )
+        self.coordinator_user = self.create_user(
+            email="coord@test.com",
+            password="coordpassword123",
+            role=self.coordinator_role,
+            first_name="Carlos",
+            last_name="Coord",
+        )
+        self.active_period = AcademicPeriod.objects.create(
+            code="2026-1",
+            name="Periodo 2026-1",
+            start_date=date(2026, 1, 1),
+            end_date=date(2026, 6, 30),
+            is_active=True,
+        )
+        self.subject = Subject.objects.create(
+            code="MAT101",
+            name="Calculo I",
+            class_type=Subject.CLASS_TYPE_PRESENCIAL,
+            credits=3,
+            weekly_hours=4,
+            capacity=40,
+            difficulty=160,
+        )
+        self.subject_group = SubjectGroup.objects.create(
+            subject=self.subject,
+            identifier="Grupo 1",
+        )
+        self.academic_program = AcademicProgram.objects.create(
+            code="ING-SIS", name="Ingenieria de Sistemas"
+        )
+
+    def test_admin_can_create_subject_group(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subject-groups-list-create"),
+            {
+                "subject_id": self.subject.id,
+                "identifier": "Grupo 2",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["identifier"], "Grupo 2")
+
+    def test_admin_can_create_subject_with_difficulty_calculated(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subjects-list-create"),
+            {
+                "code": "FIS101",
+                "name": "Fisica I",
+                "class_type": "virtual",
+                "credits": 4,
+                "weekly_hours": 5,
+                "capacity": 35,
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["difficulty"], 175)
+
+    def test_admin_can_update_subject_intensity_and_recalculate_difficulty(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.patch(
+            reverse("programming-subjects-detail", kwargs={"config_id": self.subject.id}),
+            {
+                "weekly_hours": 6,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["difficulty"], 240)
+
+    def test_subject_code_must_be_unique(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subjects-list-create"),
+            {
+                "code": "MAT101",
+                "name": "Calculo I Duplicada",
+                "class_type": "presencial",
+                "credits": 3,
+                "weekly_hours": 4,
+                "capacity": 30,
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("code", response.data)
+
+    def test_subject_numeric_fields_must_be_positive(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subjects-list-create"),
+            {
+                "code": "QUI101",
+                "name": "Quimica I",
+                "class_type": "virtual",
+                "credits": 0,
+                "weekly_hours": 0,
+                "capacity": 0,
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("credits", response.data)
+
+    def test_duplicate_subject_group_is_rejected(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subject-groups-list-create"),
+            {
+                "subject_id": self.subject.id,
+                "identifier": "Grupo 1",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("identifier", response.data)
+        self.assertIn("Ya existe un grupo", str(response.data["identifier"][0]))
+
+    def test_subject_offering_requires_semester(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subject-offerings-list-create"),
+            {
+                "subject_id": self.subject.id,
+                "subject_group_id": self.subject_group.id,
+                "academic_program_id": self.academic_program.id,
+                "semester": "",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("semester", response.data)
+
+    def test_subject_offering_is_assigned_to_active_period(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("programming-subject-offerings-list-create"),
+            {
+                "subject_id": self.subject.id,
+                "subject_group_id": self.subject_group.id,
+                "academic_program_id": self.academic_program.id,
+                "semester": 3,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["academic_period"]["id"], self.active_period.id)
+        self.assertEqual(response.data["semester"], 3)
+
+    def test_subject_offering_rejects_duplicates_for_same_period(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        payload = {
+            "subject_id": self.subject.id,
+            "subject_group_id": self.subject_group.id,
+            "academic_program_id": self.academic_program.id,
+            "semester": 3,
+        }
+
+        first_response = self.client.post(
+            reverse("programming-subject-offerings-list-create"), payload, format="json"
+        )
+        self.assertEqual(first_response.status_code, status.HTTP_201_CREATED)
+
+        second_response = self.client.post(
+            reverse("programming-subject-offerings-list-create"), payload, format="json"
+        )
+        self.assertEqual(second_response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("subject_group_id", second_response.data)
+
+    def test_coordinator_can_list_catalogs_for_programming(self):
+        self.login_and_set_auth("coord@test.com", "coordpassword123")
+
+        subjects_response = self.client.get(reverse("programming-subjects-list-create"))
+        programs_response = self.client.get(reverse("programming-academic-programs-list-create"))
+
+        self.assertEqual(subjects_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(programs_response.status_code, status.HTTP_200_OK)
+
+    def test_coordinator_cannot_create_catalog_entries(self):
+        self.login_and_set_auth("coord@test.com", "coordpassword123")
+
+        subject_response = self.client.post(
+            reverse("programming-subjects-list-create"),
+            {"code": "FIS101", "name": "Fisica I", "is_active": True},
+            format="json",
+        )
+        program_response = self.client.post(
+            reverse("programming-academic-programs-list-create"),
+            {"code": "ING-IND", "name": "Ingenieria Industrial", "is_active": True},
+            format="json",
+        )
+
+        self.assertEqual(subject_response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(program_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_coordinator_can_register_subject_offering(self):
+        self.login_and_set_auth("coord@test.com", "coordpassword123")
+
+        response = self.client.post(
+            reverse("programming-subject-offerings-list-create"),
+            {
+                "subject_id": self.subject.id,
+                "subject_group_id": self.subject_group.id,
+                "academic_program_id": self.academic_program.id,
+                "semester": 4,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["academic_period"]["id"], self.active_period.id)
+        self.assertEqual(response.data["semester"], 4)
 
 
 class HealthCheckTests(APITestCase):

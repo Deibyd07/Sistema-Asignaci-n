@@ -1,25 +1,103 @@
 import { useEffect, useState } from "react";
 
 import {
+  createAcademicProgram,
   createPeriod,
+  createSubject,
+  createSubjectGroup,
+  createSubjectOffering,
   createSpaceType,
   createTimeSlot,
   createWorkingDay,
+  deleteAcademicProgram,
   deletePeriod,
+  deleteSubject,
+  deleteSubjectGroup,
+  deleteSubjectOffering,
   deleteSpaceType,
   deleteTimeSlot,
   deleteWorkingDay,
+  listAcademicPrograms,
   listPeriods,
+  listSubjects,
+  listSubjectGroups,
+  listSubjectOfferings,
   listSpaceTypes,
   listTimeSlots,
   listWorkingDays,
+  updateAcademicProgram,
   updatePeriod,
+  updateSubject,
+  updateSubjectGroup,
+  updateSubjectOffering,
   updateSpaceType,
   updateTimeSlot,
   updateWorkingDay,
 } from "../services/configApi";
 
 const RESOURCE_CONFIG = {
+  academicPrograms: {
+    list: listAcademicPrograms,
+    create: createAcademicProgram,
+    update: updateAcademicProgram,
+    remove: deleteAcademicProgram,
+    defaultForm: {
+      code: "",
+      name: "",
+      is_active: true,
+    },
+    fieldOrder: ["code", "name", "is_active"],
+  },
+  subjects: {
+    list: listSubjects,
+    create: createSubject,
+    update: updateSubject,
+    remove: deleteSubject,
+    defaultForm: {
+      code: "",
+      name: "",
+      class_type: "presencial",
+      credits: "",
+      weekly_hours: "",
+      capacity: "",
+      is_active: true,
+    },
+    fieldOrder: [
+      "code",
+      "name",
+      "class_type",
+      "credits",
+      "weekly_hours",
+      "capacity",
+      "is_active",
+    ],
+  },
+  subjectGroups: {
+    list: listSubjectGroups,
+    create: createSubjectGroup,
+    update: updateSubjectGroup,
+    remove: deleteSubjectGroup,
+    defaultForm: {
+      subject_id: "",
+      identifier: "",
+      is_active: true,
+    },
+    fieldOrder: ["subject_id", "identifier", "is_active"],
+  },
+  subjectOfferings: {
+    list: listSubjectOfferings,
+    create: createSubjectOffering,
+    update: updateSubjectOffering,
+    remove: deleteSubjectOffering,
+    defaultForm: {
+      subject_id: "",
+      subject_group_id: "",
+      academic_program_id: "",
+      semester: "",
+      is_active: true,
+    },
+    fieldOrder: ["subject_id", "subject_group_id", "academic_program_id", "semester", "is_active"],
+  },
   periods: {
     list: listPeriods,
     create: createPeriod,
@@ -75,6 +153,38 @@ const RESOURCE_CONFIG = {
 
 function buildInitialState() {
   return {
+    academicPrograms: {
+      items: [],
+      form: { ...RESOURCE_CONFIG.academicPrograms.defaultForm },
+      editId: null,
+      loading: false,
+      submitting: false,
+      error: "",
+    },
+    subjects: {
+      items: [],
+      form: { ...RESOURCE_CONFIG.subjects.defaultForm },
+      editId: null,
+      loading: false,
+      submitting: false,
+      error: "",
+    },
+    subjectGroups: {
+      items: [],
+      form: { ...RESOURCE_CONFIG.subjectGroups.defaultForm },
+      editId: null,
+      loading: false,
+      submitting: false,
+      error: "",
+    },
+    subjectOfferings: {
+      items: [],
+      form: { ...RESOURCE_CONFIG.subjectOfferings.defaultForm },
+      editId: null,
+      loading: false,
+      submitting: false,
+      error: "",
+    },
     periods: {
       items: [],
       form: { ...RESOURCE_CONFIG.periods.defaultForm },
@@ -118,6 +228,32 @@ function normalizePayload(resourceKey, form) {
     };
   }
 
+  if (resourceKey === "subjectOfferings") {
+    return {
+      ...form,
+      subject_id: Number(form.subject_id),
+      subject_group_id: Number(form.subject_group_id),
+      academic_program_id: Number(form.academic_program_id),
+      semester: Number(form.semester),
+    };
+  }
+
+  if (resourceKey === "subjectGroups") {
+    return {
+      ...form,
+      subject_id: Number(form.subject_id),
+    };
+  }
+
+  if (resourceKey === "subjects") {
+    return {
+      ...form,
+      credits: Number(form.credits),
+      weekly_hours: Number(form.weekly_hours),
+      capacity: Number(form.capacity),
+    };
+  }
+
   return form;
 }
 
@@ -133,11 +269,38 @@ function mapItemToForm(resourceKey, item) {
     form.day_of_week = String(item.day_of_week);
   }
 
+  if (resourceKey === "subjectOfferings") {
+    form.subject_id = String(item.subject?.id ?? item.subject_id ?? "");
+    form.subject_group_id = String(item.subject_group?.id ?? item.subject_group_id ?? "");
+    form.academic_program_id = String(
+      item.academic_program?.id ?? item.academic_program_id ?? "",
+    );
+    form.semester = String(item.semester);
+  }
+
+  if (resourceKey === "subjectGroups") {
+    form.subject_id = String(item.subject?.id ?? item.subject_id ?? "");
+  }
+
+  if (resourceKey === "subjects") {
+    form.credits = String(item.credits);
+    form.weekly_hours = String(item.weekly_hours);
+    form.capacity = String(item.capacity);
+  }
+
   return form;
 }
 
-export function useSystemConfig({ authToken, enabled }) {
+export function useSystemConfig({ authToken, enabled, role }) {
   const [state, setState] = useState(buildInitialState());
+
+  const getResourceKeysForRole = (role) => {
+    if (role === "coordinador") {
+      return ["subjectOfferings", "subjects", "subjectGroups", "academicPrograms"];
+    }
+
+    return Object.keys(RESOURCE_CONFIG);
+  };
 
   const setResourceState = (resourceKey, updater) => {
     setState((previous) => ({
@@ -185,8 +348,9 @@ export function useSystemConfig({ authToken, enabled }) {
     }
   };
 
-  const refreshAll = async () => {
-    await Promise.all(Object.keys(RESOURCE_CONFIG).map((key) => loadResource(key)));
+  const refreshAll = async (activeRole) => {
+    const keys = getResourceKeysForRole(activeRole);
+    await Promise.all(keys.map((key) => loadResource(key)));
   };
 
   useEffect(() => {
@@ -194,10 +358,22 @@ export function useSystemConfig({ authToken, enabled }) {
       return;
     }
 
-    refreshAll();
-  }, [authToken, enabled]);
+    refreshAll(role);
+  }, [authToken, enabled, role]);
 
   const handleFieldChange = (resourceKey, field, value) => {
+    if (resourceKey === "subjectOfferings" && field === "subject_id") {
+      setResourceState(resourceKey, (resourceState) => ({
+        ...resourceState,
+        form: {
+          ...resourceState.form,
+          subject_id: value,
+          subject_group_id: "",
+        },
+      }));
+      return;
+    }
+
     setResourceState(resourceKey, (resourceState) => ({
       ...resourceState,
       form: {
@@ -294,7 +470,7 @@ export function useSystemConfig({ authToken, enabled }) {
 
   return {
     configState: state,
-    refreshAll,
+    refreshAll: () => refreshAll(role),
     handleFieldChange,
     handleSelectEdit,
     handleDelete,

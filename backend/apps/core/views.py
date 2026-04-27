@@ -2,21 +2,36 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import AcademicPeriod, Role, SpaceType, TimeSlot, UserProfile, WorkingDay
+from .models import (
+    AcademicPeriod,
+    AcademicProgram,
+    Role,
+    SpaceType,
+    Subject,
+    SubjectGroup,
+    SubjectOffering,
+    TimeSlot,
+    UserProfile,
+    WorkingDay,
+)
 from .services.health_service import build_health_payload
 from .permissions import HasAllowedRoles, get_user_role_name
 from .serializers import (
     LoginSerializer,
     RoleSerializer,
     AcademicPeriodSerializer,
+    AcademicProgramSerializer,
     SpaceTypeSerializer,
+    SubjectGroupSerializer,
+    SubjectOfferingSerializer,
+    SubjectSerializer,
     TimeSlotSerializer,
     UserCreateSerializer,
     UserProfileReadSerializer,
@@ -24,6 +39,7 @@ from .serializers import (
     WorkingDaySerializer,
 )
 from .services.user_service import deactivate_user_profile
+from .services.programming_service import get_active_academic_period
 
 
 @api_view(["GET"])
@@ -97,6 +113,11 @@ class AdminOnlyAPIView(APIView):
 class AdminProtectedAPIView(APIView):
     permission_classes = [IsAuthenticated, HasAllowedRoles]
     allowed_roles = ("administrador",)
+
+
+class CoordinatorProtectedAPIView(APIView):
+    permission_classes = [IsAuthenticated, HasAllowedRoles]
+    allowed_roles = ("administrador", "coordinador")
 
 
 class RoleListAPIView(AdminProtectedAPIView):
@@ -202,6 +223,25 @@ class ConfigDetailBaseAPIView(AdminProtectedAPIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+class CoordinatorReadableConfigListCreateAPIView(CoordinatorProtectedAPIView):
+    queryset = None
+    serializer_class = None
+
+    def get(self, _request):
+        serializer = self.serializer_class(self.queryset.all(), many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        if get_user_role_name(request.user) != "administrador":
+            raise PermissionDenied("Solo administradores pueden crear en este catalogo.")
+
+        serializer = self.serializer_class(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        response_serializer = self.serializer_class(instance)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
 class AcademicPeriodListCreateAPIView(ConfigListCreateBaseAPIView):
     queryset = AcademicPeriod.objects.order_by("-start_date")
     serializer_class = AcademicPeriodSerializer
@@ -240,3 +280,75 @@ class SpaceTypeListCreateAPIView(ConfigListCreateBaseAPIView):
 class SpaceTypeDetailAPIView(ConfigDetailBaseAPIView):
     queryset = SpaceType.objects.all()
     serializer_class = SpaceTypeSerializer
+
+
+class AcademicProgramListCreateAPIView(CoordinatorReadableConfigListCreateAPIView):
+    queryset = AcademicProgram.objects.order_by("code")
+    serializer_class = AcademicProgramSerializer
+
+
+class AcademicProgramDetailAPIView(ConfigDetailBaseAPIView):
+    queryset = AcademicProgram.objects.all()
+    serializer_class = AcademicProgramSerializer
+
+
+class SubjectListCreateAPIView(CoordinatorReadableConfigListCreateAPIView):
+    queryset = Subject.objects.order_by("code")
+    serializer_class = SubjectSerializer
+
+
+class SubjectDetailAPIView(ConfigDetailBaseAPIView):
+    queryset = Subject.objects.all()
+    serializer_class = SubjectSerializer
+
+
+class SubjectGroupListCreateAPIView(CoordinatorReadableConfigListCreateAPIView):
+    queryset = SubjectGroup.objects.select_related("subject").order_by("subject__code", "identifier")
+    serializer_class = SubjectGroupSerializer
+
+
+class SubjectGroupDetailAPIView(ConfigDetailBaseAPIView):
+    queryset = SubjectGroup.objects.select_related("subject").all()
+    serializer_class = SubjectGroupSerializer
+
+
+class SubjectOfferingListCreateAPIView(CoordinatorProtectedAPIView):
+    def get(self, _request):
+        active_period = get_active_academic_period()
+        if active_period is None:
+            queryset = SubjectOffering.objects.none()
+        else:
+            queryset = SubjectOffering.objects.select_related(
+                "subject", "academic_program", "academic_period"
+            ).filter(academic_period=active_period).order_by("semester", "subject__code")
+
+        serializer = SubjectOfferingSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = SubjectOfferingSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = serializer.save()
+        response_serializer = SubjectOfferingSerializer(instance)
+        return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class SubjectOfferingDetailAPIView(CoordinatorProtectedAPIView):
+    def get_object(self, subject_offering_id):
+        return get_object_or_404(
+            SubjectOffering.objects.select_related("subject", "academic_program", "academic_period"),
+            id=subject_offering_id,
+        )
+
+    def patch(self, request, subject_offering_id):
+        instance = self.get_object(subject_offering_id)
+        serializer = SubjectOfferingSerializer(instance, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated_instance = serializer.save()
+        response_serializer = SubjectOfferingSerializer(updated_instance)
+        return Response(response_serializer.data)
+
+    def delete(self, _request, subject_offering_id):
+        instance = self.get_object(subject_offering_id)
+        instance.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)

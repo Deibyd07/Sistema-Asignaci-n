@@ -1,6 +1,6 @@
 from django.db import IntegrityError, transaction
 
-from apps.core.models import AcademicPeriod, SpaceType, TimeSlot, WorkingDay
+from apps.core.models import AcademicPeriod, AcademicProgram, SpaceType, Subject, SubjectGroup, TimeSlot, WorkingDay
 
 
 class ConfigServiceError(Exception):
@@ -30,6 +30,52 @@ def _validate_day_of_week(day_of_week):
 def _validate_time_range(start_time, end_time):
     if start_time >= end_time:
         raise ConfigValidationError("La hora de fin debe ser mayor a la hora de inicio.")
+
+
+def _validate_code(code):
+    normalized_code = (code or "").strip()
+    if not normalized_code:
+        raise ConfigValidationError("El codigo es obligatorio.")
+    return normalized_code
+
+
+def _validate_required_name(name):
+    normalized_name = _normalize_name(name)
+    if not normalized_name:
+        raise ConfigValidationError("El nombre es obligatorio.")
+    return normalized_name
+
+
+def _validate_identifier(identifier):
+    normalized_identifier = _normalize_name(identifier)
+    if not normalized_identifier:
+        raise ConfigValidationError("El identificador es obligatorio.")
+    return normalized_identifier
+
+
+def _validate_positive_integer(value, field_label):
+    if value is None or value <= 0:
+        raise ConfigValidationError(f"{field_label} debe ser mayor a cero.")
+
+
+def _validate_class_type(class_type):
+    valid_types = {choice[0] for choice in Subject.CLASS_TYPE_CHOICES}
+    legacy_map = {
+        "teorica": Subject.CLASS_TYPE_PRESENCIAL,
+        "practica": Subject.CLASS_TYPE_VIRTUAL,
+    }
+
+    normalized_class_type = legacy_map.get(class_type, class_type)
+    if normalized_class_type not in valid_types:
+        raise ConfigValidationError("El tipo de clase no es valido.")
+
+    return normalized_class_type
+
+
+def _calculate_difficulty(*, weekly_hours, capacity):
+    _validate_positive_integer(weekly_hours, "La intensidad horaria")
+    _validate_positive_integer(capacity, "El cupo")
+    return weekly_hours * capacity
 
 
 @transaction.atomic
@@ -152,3 +198,99 @@ def update_space_type(space_type, *, name, description, is_active):
         raise ConfigValidationError("Ya existe un tipo de espacio con ese nombre.") from exc
 
     return space_type
+
+
+@transaction.atomic
+def create_academic_program(*, code, name, is_active=True):
+    try:
+        return AcademicProgram.objects.create(
+            code=_validate_code(code),
+            name=_normalize_name(name),
+            is_active=is_active,
+        )
+    except IntegrityError as exc:
+        raise ConfigValidationError("Ya existe un programa academico con ese codigo.") from exc
+
+
+@transaction.atomic
+def update_academic_program(academic_program, *, code, name, is_active):
+    academic_program.code = _validate_code(code)
+    academic_program.name = _normalize_name(name)
+    academic_program.is_active = is_active
+
+    try:
+        academic_program.save()
+    except IntegrityError as exc:
+        raise ConfigValidationError("Ya existe un programa academico con ese codigo.") from exc
+
+    return academic_program
+
+
+@transaction.atomic
+def create_subject(*, code, name, class_type, credits, weekly_hours, capacity, is_active=True):
+    normalized_class_type = _validate_class_type(class_type)
+    _validate_positive_integer(credits, "Los creditos")
+    difficulty = _calculate_difficulty(weekly_hours=weekly_hours, capacity=capacity)
+
+    try:
+        return Subject.objects.create(
+            code=_validate_code(code),
+            name=_validate_required_name(name),
+            class_type=normalized_class_type,
+            credits=credits,
+            weekly_hours=weekly_hours,
+            capacity=capacity,
+            difficulty=difficulty,
+            is_active=is_active,
+        )
+    except IntegrityError as exc:
+        raise ConfigValidationError("Ya existe una asignatura con ese codigo.") from exc
+
+
+@transaction.atomic
+def update_subject(subject, *, code, name, class_type, credits, weekly_hours, capacity, is_active):
+    normalized_class_type = _validate_class_type(class_type)
+    _validate_positive_integer(credits, "Los creditos")
+    difficulty = _calculate_difficulty(weekly_hours=weekly_hours, capacity=capacity)
+
+    subject.code = _validate_code(code)
+    subject.name = _validate_required_name(name)
+    subject.class_type = normalized_class_type
+    subject.credits = credits
+    subject.weekly_hours = weekly_hours
+    subject.capacity = capacity
+    subject.difficulty = difficulty
+    subject.is_active = is_active
+
+    try:
+        subject.save()
+    except IntegrityError as exc:
+        raise ConfigValidationError("Ya existe una asignatura con ese codigo.") from exc
+
+    return subject
+
+
+@transaction.atomic
+def create_subject_group(*, subject, identifier, is_active=True):
+    try:
+        return SubjectGroup.objects.create(
+            subject=subject,
+            identifier=_validate_identifier(identifier),
+            is_active=is_active,
+        )
+    except IntegrityError as exc:
+        raise ConfigValidationError("Ya existe un grupo con ese identificador para la asignatura.") from exc
+
+
+@transaction.atomic
+def update_subject_group(subject_group, *, subject, identifier, is_active):
+    subject_group.subject = subject
+    subject_group.identifier = _validate_identifier(identifier)
+    subject_group.is_active = is_active
+
+    try:
+        subject_group.save()
+    except IntegrityError as exc:
+        raise ConfigValidationError("Ya existe un grupo con ese identificador para la asignatura.") from exc
+
+    return subject_group

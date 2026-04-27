@@ -2,19 +2,37 @@ from django.contrib.auth import authenticate
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import AcademicPeriod, Role, SpaceType, TimeSlot, UserProfile, WorkingDay
+from .models import (
+    AcademicPeriod,
+    AcademicProgram,
+    Role,
+    SpaceType,
+    Subject,
+    SubjectGroup,
+    SubjectOffering,
+    TimeSlot,
+    UserProfile,
+    WorkingDay,
+)
 from .permissions import get_user_role_name
 from .services.config_service import (
     ConfigValidationError,
     create_academic_period,
+    create_academic_program,
     create_space_type,
+    create_subject,
+    create_subject_group,
     create_time_slot,
     create_working_day,
     update_academic_period,
+    update_academic_program,
     update_space_type,
+    update_subject,
+    update_subject_group,
     update_time_slot,
     update_working_day,
 )
+from .services.programming_service import create_subject_offering, update_subject_offering
 from .services.user_service import (
     UserEmailAlreadyExistsError,
     create_user_with_profile,
@@ -57,6 +75,150 @@ class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
         fields = ["id", "name", "description", "is_active"]
+
+
+class AcademicProgramSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AcademicProgram
+        fields = ["id", "code", "name", "is_active", "created_at", "updated_at"]
+
+    def create(self, validated_data):
+        try:
+            return create_academic_program(**validated_data)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError({"code": str(exc)}) from exc
+
+    def update(self, instance, validated_data):
+        payload = {
+            "code": validated_data.get("code", instance.code),
+            "name": validated_data.get("name", instance.name),
+            "is_active": validated_data.get("is_active", instance.is_active),
+        }
+
+        try:
+            return update_academic_program(instance, **payload)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError({"code": str(exc)}) from exc
+
+
+class SubjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Subject
+        fields = [
+            "id",
+            "code",
+            "name",
+            "class_type",
+            "credits",
+            "weekly_hours",
+            "capacity",
+            "difficulty",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["difficulty", "created_at", "updated_at"]
+
+    @staticmethod
+    def _map_subject_error(message):
+        normalized_message = str(message).lower()
+
+        if "codigo" in normalized_message:
+            return {"code": str(message)}
+        if "nombre" in normalized_message:
+            return {"name": str(message)}
+        if "tipo de clase" in normalized_message:
+            return {"class_type": str(message)}
+        if "creditos" in normalized_message:
+            return {"credits": str(message)}
+        if "intensidad" in normalized_message:
+            return {"weekly_hours": str(message)}
+        if "cupo" in normalized_message:
+            return {"capacity": str(message)}
+
+        return {"non_field_errors": [str(message)]}
+
+    def create(self, validated_data):
+        try:
+            return create_subject(**validated_data)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError(self._map_subject_error(exc)) from exc
+
+    def update(self, instance, validated_data):
+        payload = {
+            "code": validated_data.get("code", instance.code),
+            "name": validated_data.get("name", instance.name),
+            "class_type": validated_data.get("class_type", instance.class_type),
+            "credits": validated_data.get("credits", instance.credits),
+            "weekly_hours": validated_data.get("weekly_hours", instance.weekly_hours),
+            "capacity": validated_data.get("capacity", instance.capacity),
+            "is_active": validated_data.get("is_active", instance.is_active),
+        }
+
+        try:
+            return update_subject(instance, **payload)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError(self._map_subject_error(exc)) from exc
+
+
+class SubjectGroupSerializer(serializers.ModelSerializer):
+    subject = SubjectSerializer(read_only=True)
+    subject_id = serializers.PrimaryKeyRelatedField(
+        source="subject", queryset=Subject.objects.all(), write_only=True
+    )
+
+    class Meta:
+        model = SubjectGroup
+        fields = [
+            "id",
+            "subject",
+            "subject_id",
+            "identifier",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+        validators = []
+
+    def validate(self, attrs):
+        subject = attrs.get("subject", getattr(self.instance, "subject", None))
+        identifier = attrs.get("identifier", getattr(self.instance, "identifier", None))
+
+        if subject and identifier:
+            duplicated_group = SubjectGroup.objects.filter(
+                subject=subject,
+                identifier=identifier.strip(),
+            )
+
+            if self.instance is not None:
+                duplicated_group = duplicated_group.exclude(id=self.instance.id)
+
+            if duplicated_group.exists():
+                raise serializers.ValidationError(
+                    {
+                        "identifier": "Ya existe un grupo con ese identificador para la asignatura.",
+                    }
+                )
+
+        return attrs
+
+    def create(self, validated_data):
+        try:
+            return create_subject_group(**validated_data)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError({"identifier": str(exc)}) from exc
+
+    def update(self, instance, validated_data):
+        payload = {
+            "subject": validated_data.get("subject", instance.subject),
+            "identifier": validated_data.get("identifier", instance.identifier),
+            "is_active": validated_data.get("is_active", instance.is_active),
+        }
+
+        try:
+            return update_subject_group(instance, **payload)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError({"identifier": str(exc)}) from exc
 
 
 class UserProfileReadSerializer(serializers.ModelSerializer):
@@ -213,3 +375,58 @@ class SpaceTypeSerializer(serializers.ModelSerializer):
             return update_space_type(instance, **payload)
         except ConfigValidationError as exc:
             raise serializers.ValidationError({"name": str(exc)}) from exc
+
+
+class SubjectOfferingSerializer(serializers.ModelSerializer):
+    subject = SubjectSerializer(read_only=True)
+    subject_group = SubjectGroupSerializer(read_only=True)
+    academic_program = AcademicProgramSerializer(read_only=True)
+    academic_period = AcademicPeriodSerializer(read_only=True)
+    subject_id = serializers.PrimaryKeyRelatedField(
+        source="subject", queryset=Subject.objects.all(), write_only=True
+    )
+    subject_group_id = serializers.PrimaryKeyRelatedField(
+        source="subject_group", queryset=SubjectGroup.objects.select_related("subject").all(), write_only=True
+    )
+    academic_program_id = serializers.PrimaryKeyRelatedField(
+        source="academic_program", queryset=AcademicProgram.objects.all(), write_only=True
+    )
+
+    class Meta:
+        model = SubjectOffering
+        fields = [
+            "id",
+            "subject",
+            "subject_id",
+            "subject_group",
+            "subject_group_id",
+            "academic_program",
+            "academic_program_id",
+            "academic_period",
+            "semester",
+            "is_active",
+            "created_at",
+            "updated_at",
+        ]
+
+    def create(self, validated_data):
+        try:
+            return create_subject_offering(**validated_data)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError({"subject_group_id": [str(exc)]}) from exc
+
+    def update(self, instance, validated_data):
+        payload = {
+            "subject": validated_data.get("subject", instance.subject),
+            "subject_group": validated_data.get("subject_group", instance.subject_group),
+            "academic_program": validated_data.get(
+                "academic_program", instance.academic_program
+            ),
+            "semester": validated_data.get("semester", instance.semester),
+            "is_active": validated_data.get("is_active", instance.is_active),
+        }
+
+        try:
+            return update_subject_offering(instance, **payload)
+        except ConfigValidationError as exc:
+            raise serializers.ValidationError({"subject_group_id": [str(exc)]}) from exc

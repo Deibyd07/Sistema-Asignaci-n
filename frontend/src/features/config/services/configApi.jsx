@@ -107,3 +107,111 @@ export function deleteSpaceType(token, id) {
     token,
   });
 }
+
+export function listAcademicPrograms(token) {
+  return coreApiRequest("/programming/academic-programs/", { token });
+}
+
+export function createAcademicProgram(token, payload) {
+  return coreApiRequest("/programming/academic-programs/", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export function updateAcademicProgram(token, id, payload) {
+  return coreApiRequest(`/programming/academic-programs/${id}/`, {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
+}
+
+export function deleteAcademicProgram(token, id) {
+  return coreApiRequest(`/programming/academic-programs/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export function listSubjects(token) {
+  return coreApiRequest("/programming/subjects/", { token });
+}
+
+export function createSubject(token, payload) {
+  return coreApiRequest("/programming/subjects/", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export function updateSubject(token, id, payload) {
+  return coreApiRequest(`/programming/subjects/${id}/`, {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
+}
+
+export function deleteSubject(token, id) {
+  return coreApiRequest(`/programming/subjects/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export function listSubjectGroups(token) {
+  return coreApiRequest("/programming/subject-groups/", { token });
+}
+
+export function createSubjectGroup(token, payload) {
+  return coreApiRequest("/programming/subject-groups/", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export function updateSubjectGroup(token, id, payload) {
+  return coreApiRequest(`/programming/subject-groups/${id}/`, {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
+}
+
+export function deleteSubjectGroup(token, id) {
+  return coreApiRequest(`/programming/subject-groups/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}
+
+export function listSubjectOfferings(token) {
+  return coreApiRequest("/programming/subject-offerings/", { token });
+}
+
+export function createSubjectOffering(token, payload) {
+  return coreApiRequest("/programming/subject-offerings/", {
+    method: "POST",
+    token,
+    body: payload,
+  });
+}
+
+export function updateSubjectOffering(token, id, payload) {
+  return coreApiRequest(`/programming/subject-offerings/${id}/`, {
+    method: "PATCH",
+    token,
+    body: payload,
+  });
+}
+
+export function deleteSubjectOffering(token, id) {
+  return coreApiRequest(`/programming/subject-offerings/${id}/`, {
+    method: "DELETE",
+    token,
+  });
+}

@@ -1,4 +1,81 @@
 const SECTION_DEFINITIONS = {
+  academicPrograms: {
+    title: "Programas academicos",
+    fields: [
+      { name: "code", label: "Codigo", type: "text", required: true },
+      { name: "name", label: "Nombre", type: "text", required: true },
+      { name: "is_active", label: "Activo", type: "checkbox", required: false },
+    ],
+  },
+  subjects: {
+    title: "Catalogo de asignaturas",
+    fields: [
+      { name: "code", label: "Codigo", type: "text", required: true },
+      { name: "name", label: "Nombre", type: "text", required: true },
+      {
+        name: "class_type",
+        label: "Tipo de clase",
+        type: "select",
+        required: true,
+        options: [
+          { value: "presencial", label: "Presencial" },
+          { value: "virtual", label: "Virtual" },
+        ],
+      },
+      { name: "credits", label: "Creditos", type: "number", required: true, min: 1 },
+      {
+        name: "weekly_hours",
+        label: "Intensidad horaria",
+        type: "number",
+        required: true,
+        min: 1,
+      },
+      { name: "capacity", label: "Cupo", type: "number", required: true, min: 1 },
+      { name: "is_active", label: "Activo", type: "checkbox", required: false },
+    ],
+  },
+  subjectGroups: {
+    title: "Grupos por asignatura",
+    fields: [
+      {
+        name: "subject_id",
+        label: "Asignatura",
+        type: "select",
+        required: true,
+        optionsFrom: "subjects",
+      },
+      { name: "identifier", label: "Identificador", type: "text", required: true },
+      { name: "is_active", label: "Activo", type: "checkbox", required: false },
+    ],
+  },
+  subjectOfferings: {
+    title: "Programacion de asignaturas",
+    fields: [
+      {
+        name: "subject_id",
+        label: "Asignatura",
+        type: "select",
+        required: true,
+        optionsFrom: "subjects",
+      },
+      {
+        name: "subject_group_id",
+        label: "Grupo",
+        type: "select",
+        required: true,
+        optionsFrom: "subjectGroups",
+      },
+      {
+        name: "academic_program_id",
+        label: "Programa academico",
+        type: "select",
+        required: true,
+        optionsFrom: "academicPrograms",
+      },
+      { name: "semester", label: "Semestre", type: "number", required: true, min: 1 },
+      { name: "is_active", label: "Activo", type: "checkbox", required: false },
+    ],
+  },
   periods: {
     title: "Periodos academicos",
     fields: [
@@ -48,6 +125,7 @@ function ConfigSectionCard({
   title,
   sectionState,
   fields,
+  configState,
   onFieldChange,
   onSubmit,
   onEdit,
@@ -71,6 +149,43 @@ function ConfigSectionCard({
                   }
                 />
                 {field.label}
+              </label>
+            );
+          }
+
+          if (field.type === "select") {
+            const fixedOptions = field.options ?? null;
+            const options =
+              sectionKey === "subjectOfferings" && field.name === "subject_group_id"
+                ? (configState?.[field.optionsFrom]?.items ?? []).filter(
+                    (option) =>
+                      String(option.subject?.id ?? option.subject_id ?? "") ===
+                      String(sectionState.form.subject_id ?? ""),
+                  )
+                : fixedOptions
+                  ? fixedOptions
+                  : configState?.[field.optionsFrom]?.items ?? [];
+
+            return (
+              <label key={field.name}>
+                {field.label}
+                <select
+                  value={sectionState.form[field.name] ?? ""}
+                  required={field.required}
+                  onChange={(event) =>
+                    onFieldChange(sectionKey, field.name, event.target.value)
+                  }
+                >
+                  <option value="">Selecciona una opcion</option>
+                  {options.map((option) => (
+                    <option
+                      key={option.id ?? option.value}
+                      value={option.id ?? option.value}
+                    >
+                      {buildOptionLabel(option)}
+                    </option>
+                  ))}
+                </select>
               </label>
             );
           }
@@ -135,6 +250,29 @@ function ConfigSectionCard({
 }
 
 function buildItemSummary(sectionKey, item) {
+  if (sectionKey === "academicPrograms") {
+    return item.name || "Sin nombre";
+  }
+
+  if (sectionKey === "subjects") {
+    return `${item.class_type} | Creditos ${item.credits} | Intensidad ${item.weekly_hours} | Cupo ${item.capacity} | Dificultad ${item.difficulty}`;
+  }
+
+  if (sectionKey === "subjectGroups") {
+    const subjectCode = item.subject?.code || item.subject_id || "Asignatura";
+
+    return `${subjectCode} | ${item.identifier} | ${item.is_active ? "Activo" : "Inactivo"}`;
+  }
+
+  if (sectionKey === "subjectOfferings") {
+    const subjectCode = item.subject?.code || item.subject_id || "Asignatura";
+    const groupIdentifier = item.subject_group?.identifier || item.subject_group_id || "Grupo";
+    const programCode = item.academic_program?.code || item.academic_program_id || "Programa";
+    const periodCode = item.academic_period?.code || "Periodo activo";
+
+    return `${programCode} | ${subjectCode} | ${groupIdentifier} | Semestre ${item.semester} | ${periodCode}`;
+  }
+
   if (sectionKey === "periods") {
     return `${item.code} | ${item.start_date} a ${item.end_date}`;
   }
@@ -154,6 +292,22 @@ function buildItemSummary(sectionKey, item) {
   return "";
 }
 
+function buildOptionLabel(option) {
+  if (option.label && option.value) {
+    return option.label;
+  }
+
+  if (option.subject && option.identifier) {
+    return `${option.subject.code} - ${option.identifier}`;
+  }
+
+  if (option.name && option.code) {
+    return `${option.code} - ${option.name}`;
+  }
+
+  return option.code || option.name || `Registro ${option.id}`;
+}
+
 export function SystemConfigPanel({
   configState,
   onRefresh,
@@ -162,7 +316,16 @@ export function SystemConfigPanel({
   onEdit,
   onDelete,
   onCancel,
+  visibleSections,
 }) {
+  const sectionEntries = Object.entries(SECTION_DEFINITIONS).filter(([sectionKey]) => {
+    if (!visibleSections || visibleSections.length === 0) {
+      return true;
+    }
+
+    return visibleSections.includes(sectionKey);
+  });
+
   return (
     <section className="card-block system-config-panel">
       <header className="dashboard-header config-header">
@@ -176,13 +339,14 @@ export function SystemConfigPanel({
       </header>
 
       <div className="config-grid">
-        {Object.entries(SECTION_DEFINITIONS).map(([sectionKey, sectionDefinition]) => (
+        {sectionEntries.map(([sectionKey, sectionDefinition]) => (
           <ConfigSectionCard
             key={sectionKey}
             sectionKey={sectionKey}
             title={sectionDefinition.title}
             sectionState={configState[sectionKey]}
             fields={sectionDefinition.fields}
+            configState={configState}
             onFieldChange={onFieldChange}
             onSubmit={onSubmit}
             onEdit={onEdit}
