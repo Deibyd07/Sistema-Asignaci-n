@@ -1,4 +1,7 @@
-import { coreApiRequest } from "../../../shared/api/coreApiClient";
+import {
+  coreApiMultipartRequest,
+  coreApiRequest,
+} from "../../../shared/api/coreApiClient";
 
 export function listPeriods(token) {
   return coreApiRequest("/config/periods/", { token });
@@ -108,30 +111,47 @@ export function deleteSpaceType(token, id) {
   });
 }
 
-export function listAcademicPrograms(token) {
-  return coreApiRequest("/programming/academic-programs/", { token });
+export function listCatalogItemsByType(token, catalogType, onlyActive = false) {
+  const query = onlyActive ? "?is_active=true" : "";
+  return coreApiRequest(`/catalogs/${catalogType}/${query}`, { token });
 }
 
-export function createAcademicProgram(token, payload) {
-  return coreApiRequest("/programming/academic-programs/", {
+export function createCatalogItemByType(token, catalogType, payload) {
+  return coreApiRequest(`/catalogs/${catalogType}/`, {
     method: "POST",
     token,
     body: payload,
   });
 }
 
-export function updateAcademicProgram(token, id, payload) {
-  return coreApiRequest(`/programming/academic-programs/${id}/`, {
+export function updateCatalogItemByType(token, catalogType, id, payload) {
+  return coreApiRequest(`/catalogs/${catalogType}/${id}/`, {
     method: "PATCH",
     token,
     body: payload,
   });
 }
 
-export function deleteAcademicProgram(token, id) {
-  return coreApiRequest(`/programming/academic-programs/${id}/`, {
+export function deactivateCatalogItemByType(token, catalogType, id) {
+  return coreApiRequest(`/catalogs/${catalogType}/${id}/`, {
     method: "DELETE",
     token,
+  });
+}
+
+export function listImportTemplates(token) {
+  return coreApiRequest("/imports/master-data/", { token });
+}
+
+export function importMasterData(token, resourceType, file) {
+  const formData = new FormData();
+  formData.append("resource_type", resourceType);
+  formData.append("file", file);
+
+  return coreApiMultipartRequest("/imports/master-data/", {
+    method: "POST",
+    token,
+    formData,
   });
 }
 

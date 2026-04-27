@@ -26,3 +26,26 @@ export async function coreApiRequest(path, options = {}) {
 
   return payload;
 }
+
+export async function coreApiMultipartRequest(path, options = {}) {
+  const { method = "POST", token, formData } = options;
+
+  const response = await fetch(`${coreApiBase}${path}`, {
+    method,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(extractApiError(payload));
+  }
+
+  return payload;
+}

@@ -5,11 +5,17 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import (
     AcademicPeriod,
     AcademicProgram,
+    Campus,
+    CatalogItem,
+    Classroom,
+    Course,
+    CourseGroup,
     Role,
     SpaceType,
     Subject,
     SubjectGroup,
     SubjectOffering,
+    Teacher,
     TimeSlot,
     UserProfile,
     WorkingDay,
@@ -18,14 +24,14 @@ from .permissions import get_user_role_name
 from .services.config_service import (
     ConfigValidationError,
     create_academic_period,
-    create_academic_program,
+    create_catalog_item,
     create_space_type,
     create_subject,
     create_subject_group,
     create_time_slot,
     create_working_day,
     update_academic_period,
-    update_academic_program,
+    update_catalog_item,
     update_space_type,
     update_subject,
     update_subject_group,
@@ -38,6 +44,11 @@ from .services.user_service import (
     create_user_with_profile,
     update_user_profile,
 )
+
+
+def _raise_config_validation_error(exc, default_field):
+    field = exc.field or default_field
+    raise serializers.ValidationError({field: str(exc)}) from exc
 
 
 class LoginSerializer(serializers.Serializer):
@@ -75,30 +86,6 @@ class RoleSerializer(serializers.ModelSerializer):
     class Meta:
         model = Role
         fields = ["id", "name", "description", "is_active"]
-
-
-class AcademicProgramSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AcademicProgram
-        fields = ["id", "code", "name", "is_active", "created_at", "updated_at"]
-
-    def create(self, validated_data):
-        try:
-            return create_academic_program(**validated_data)
-        except ConfigValidationError as exc:
-            raise serializers.ValidationError({"code": str(exc)}) from exc
-
-    def update(self, instance, validated_data):
-        payload = {
-            "code": validated_data.get("code", instance.code),
-            "name": validated_data.get("name", instance.name),
-            "is_active": validated_data.get("is_active", instance.is_active),
-        }
-
-        try:
-            return update_academic_program(instance, **payload)
-        except ConfigValidationError as exc:
-            raise serializers.ValidationError({"code": str(exc)}) from exc
 
 
 class SubjectSerializer(serializers.ModelSerializer):
@@ -287,7 +274,7 @@ class AcademicPeriodSerializer(serializers.ModelSerializer):
         try:
             return create_academic_period(**validated_data)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"end_date": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="code")
 
     def update(self, instance, validated_data):
         payload = {
@@ -301,7 +288,7 @@ class AcademicPeriodSerializer(serializers.ModelSerializer):
         try:
             return update_academic_period(instance, **payload)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"end_date": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="code")
 
 
 class WorkingDaySerializer(serializers.ModelSerializer):
@@ -313,7 +300,7 @@ class WorkingDaySerializer(serializers.ModelSerializer):
         try:
             return create_working_day(**validated_data)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"day_of_week": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="day_of_week")
 
     def update(self, instance, validated_data):
         payload = {
@@ -325,7 +312,7 @@ class WorkingDaySerializer(serializers.ModelSerializer):
         try:
             return update_working_day(instance, **payload)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"day_of_week": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="day_of_week")
 
 
 class TimeSlotSerializer(serializers.ModelSerializer):
@@ -337,7 +324,7 @@ class TimeSlotSerializer(serializers.ModelSerializer):
         try:
             return create_time_slot(**validated_data)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"end_time": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="end_time")
 
     def update(self, instance, validated_data):
         payload = {
@@ -350,7 +337,7 @@ class TimeSlotSerializer(serializers.ModelSerializer):
         try:
             return update_time_slot(instance, **payload)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"end_time": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="end_time")
 
 
 class SpaceTypeSerializer(serializers.ModelSerializer):
@@ -362,7 +349,7 @@ class SpaceTypeSerializer(serializers.ModelSerializer):
         try:
             return create_space_type(**validated_data)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"name": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="name")
 
     def update(self, instance, validated_data):
         payload = {
@@ -374,14 +361,12 @@ class SpaceTypeSerializer(serializers.ModelSerializer):
         try:
             return update_space_type(instance, **payload)
         except ConfigValidationError as exc:
-            raise serializers.ValidationError({"name": str(exc)}) from exc
+            _raise_config_validation_error(exc, default_field="name")
 
 
 class SubjectOfferingSerializer(serializers.ModelSerializer):
     subject = SubjectSerializer(read_only=True)
     subject_group = SubjectGroupSerializer(read_only=True)
-    academic_program = AcademicProgramSerializer(read_only=True)
-    academic_period = AcademicPeriodSerializer(read_only=True)
     subject_id = serializers.PrimaryKeyRelatedField(
         source="subject", queryset=Subject.objects.all(), write_only=True
     )
@@ -400,7 +385,6 @@ class SubjectOfferingSerializer(serializers.ModelSerializer):
             "subject_id",
             "subject_group",
             "subject_group_id",
-            "academic_program",
             "academic_program_id",
             "academic_period",
             "semester",
@@ -430,3 +414,133 @@ class SubjectOfferingSerializer(serializers.ModelSerializer):
             return update_subject_offering(instance, **payload)
         except ConfigValidationError as exc:
             raise serializers.ValidationError({"subject_group_id": [str(exc)]}) from exc
+
+
+class CatalogItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CatalogItem
+        fields = ["id", "catalog_type", "name", "description", "is_active"]
+        read_only_fields = ["catalog_type"]
+
+    def create(self, validated_data):
+        catalog_type = self.context.get("catalog_type")
+        try:
+            return create_catalog_item(catalog_type=catalog_type, **validated_data)
+        except ConfigValidationError as exc:
+            _raise_config_validation_error(exc, default_field="name")
+
+    def update(self, instance, validated_data):
+        payload = {
+            "name": validated_data.get("name", instance.name),
+            "description": validated_data.get("description", instance.description),
+            "is_active": validated_data.get("is_active", instance.is_active),
+        }
+
+        try:
+            return update_catalog_item(instance, **payload)
+        except ConfigValidationError as exc:
+            _raise_config_validation_error(exc, default_field="name")
+
+
+class CampusSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Campus
+        fields = ["id", "code", "name", "is_active"]
+
+
+class AcademicProgramSerializer(serializers.ModelSerializer):
+    campus = CampusSerializer(read_only=True)
+    campus_id = serializers.PrimaryKeyRelatedField(source="campus", queryset=Campus.objects.all())
+
+    class Meta:
+        model = AcademicProgram
+        fields = ["id", "code", "name", "campus", "campus_id", "is_active"]
+
+
+class TeacherSerializer(serializers.ModelSerializer):
+    link_type = CatalogItemSerializer(read_only=True)
+    link_type_id = serializers.PrimaryKeyRelatedField(source="link_type", queryset=CatalogItem.objects.all())
+
+    class Meta:
+        model = Teacher
+        fields = [
+            "id",
+            "first_name",
+            "last_name",
+            "email",
+            "link_type",
+            "link_type_id",
+            "hourly_rate",
+            "is_active",
+        ]
+
+    def validate_link_type_id(self, link_type):
+        if link_type.catalog_type != CatalogItem.CatalogType.TEACHER_LINK_TYPE:
+            raise serializers.ValidationError("El tipo de vinculacion docente no es valido.")
+        return link_type
+
+
+class CourseSerializer(serializers.ModelSerializer):
+    academic_program = AcademicProgramSerializer(read_only=True)
+    academic_program_id = serializers.PrimaryKeyRelatedField(
+        source="academic_program",
+        queryset=AcademicProgram.objects.all(),
+    )
+    class_type = CatalogItemSerializer(read_only=True)
+    class_type_id = serializers.PrimaryKeyRelatedField(source="class_type", queryset=CatalogItem.objects.all())
+
+    class Meta:
+        model = Course
+        fields = [
+            "id",
+            "code",
+            "name",
+            "academic_program",
+            "academic_program_id",
+            "class_type",
+            "class_type_id",
+            "credits",
+            "weekly_hours",
+            "is_active",
+        ]
+
+    def validate_class_type_id(self, class_type):
+        if class_type.catalog_type != CatalogItem.CatalogType.CLASS_TYPE:
+            raise serializers.ValidationError("El tipo de clase no es valido.")
+        return class_type
+
+
+class CourseGroupSerializer(serializers.ModelSerializer):
+    course = CourseSerializer(read_only=True)
+    course_id = serializers.PrimaryKeyRelatedField(source="course", queryset=Course.objects.all())
+
+    class Meta:
+        model = CourseGroup
+        fields = ["id", "course", "course_id", "identifier", "student_count", "is_active"]
+
+
+class ClassroomSerializer(serializers.ModelSerializer):
+    campus = CampusSerializer(read_only=True)
+    campus_id = serializers.PrimaryKeyRelatedField(source="campus", queryset=Campus.objects.all())
+    space_type = CatalogItemSerializer(read_only=True)
+    space_type_id = serializers.PrimaryKeyRelatedField(source="space_type", queryset=CatalogItem.objects.all())
+
+    class Meta:
+        model = Classroom
+        fields = [
+            "id",
+            "code",
+            "name",
+            "campus",
+            "campus_id",
+            "space_type",
+            "space_type_id",
+            "capacity",
+            "is_accessible",
+            "is_active",
+        ]
+
+    def validate_space_type_id(self, space_type):
+        if space_type.catalog_type != CatalogItem.CatalogType.ACADEMIC_SPACE_TYPE:
+            raise serializers.ValidationError("El tipo de espacio academico no es valido.")
+        return space_type

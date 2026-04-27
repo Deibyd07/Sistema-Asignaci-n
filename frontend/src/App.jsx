@@ -46,8 +46,12 @@ function App() {
 
   const {
     configState,
+    importState,
     refreshAll,
     handleFieldChange,
+    handleDownloadTemplate,
+    handleImportFieldChange,
+    handleImportSubmit,
     handleSelectEdit: handleConfigSelectEdit,
     handleDelete,
     handleSubmit,
@@ -126,7 +130,11 @@ function App() {
 
         <SystemConfigPanel
           configState={configState}
+          importState={importState}
           onRefresh={refreshAll}
+          onDownloadTemplate={handleDownloadTemplate}
+          onImportFieldChange={handleImportFieldChange}
+          onImportSubmit={handleImportSubmit}
           onFieldChange={handleFieldChange}
           onSubmit={handleSubmit}
           onEdit={handleConfigSelectEdit}

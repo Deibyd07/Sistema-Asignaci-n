@@ -57,18 +57,6 @@ class AcademicPeriod(TimeStampedModel):
         return f"{self.code} - {self.name}"
 
 
-class AcademicProgram(TimeStampedModel):
-    code = models.CharField(max_length=20, unique=True)
-    name = models.CharField(max_length=120)
-    is_active = models.BooleanField(default=True)
-
-    class Meta:
-        ordering = ["code"]
-
-    def __str__(self):
-        return f"{self.code} - {self.name}"
-
-
 class Subject(TimeStampedModel):
     CLASS_TYPE_PRESENCIAL = "presencial"
     CLASS_TYPE_VIRTUAL = "virtual"
@@ -162,6 +150,162 @@ class SpaceType(TimeStampedModel):
 
     def __str__(self):
         return self.name
+
+
+class CatalogItem(TimeStampedModel):
+    class CatalogType(models.TextChoices):
+        TEACHER_LINK_TYPE = "teacher_link_type", "Tipo de vinculacion docente"
+        CLASS_TYPE = "class_type", "Tipo de clase"
+        ACADEMIC_SPACE_TYPE = "academic_space_type", "Tipo de espacio academico"
+
+    catalog_type = models.CharField(max_length=40, choices=CatalogType.choices)
+    name = models.CharField(max_length=120)
+    description = models.CharField(max_length=255, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["catalog_type", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["catalog_type", "name"],
+                name="unique_catalog_item_per_type",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.catalog_type}: {self.name}"
+
+
+class Campus(TimeStampedModel):
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=120, unique=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class AcademicProgram(TimeStampedModel):
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=150)
+    campus = models.ForeignKey(Campus, on_delete=models.PROTECT, related_name="programs")
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["campus", "name"],
+                name="unique_program_name_per_campus",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class Teacher(TimeStampedModel):
+    first_name = models.CharField(max_length=100)
+    last_name = models.CharField(max_length=100)
+    email = models.EmailField(unique=True)
+    link_type = models.ForeignKey(
+        CatalogItem,
+        on_delete=models.PROTECT,
+        related_name="teachers",
+        limit_choices_to={"catalog_type": CatalogItem.CatalogType.TEACHER_LINK_TYPE},
+    )
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["last_name", "first_name"]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(hourly_rate__gt=0),
+                name="teacher_hourly_rate_positive",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.first_name} {self.last_name}".strip()
+
+
+class Course(TimeStampedModel):
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=150)
+    academic_program = models.ForeignKey(
+        AcademicProgram,
+        on_delete=models.PROTECT,
+        related_name="courses",
+    )
+    class_type = models.ForeignKey(
+        CatalogItem,
+        on_delete=models.PROTECT,
+        related_name="courses",
+        limit_choices_to={"catalog_type": CatalogItem.CatalogType.CLASS_TYPE},
+    )
+    credits = models.PositiveSmallIntegerField()
+    weekly_hours = models.PositiveSmallIntegerField()
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(credits__gt=0), name="course_credits_positive"),
+            models.CheckConstraint(
+                check=models.Q(weekly_hours__gt=0),
+                name="course_weekly_hours_positive",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
+
+
+class CourseGroup(TimeStampedModel):
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="groups")
+    identifier = models.CharField(max_length=30)
+    student_count = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["course_id", "identifier"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["course", "identifier"],
+                name="unique_group_identifier_per_course",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.course.code} - {self.identifier}"
+
+
+class Classroom(TimeStampedModel):
+    code = models.CharField(max_length=20, unique=True)
+    name = models.CharField(max_length=120)
+    campus = models.ForeignKey(Campus, on_delete=models.PROTECT, related_name="classrooms")
+    space_type = models.ForeignKey(
+        CatalogItem,
+        on_delete=models.PROTECT,
+        related_name="classrooms",
+        limit_choices_to={"catalog_type": CatalogItem.CatalogType.ACADEMIC_SPACE_TYPE},
+    )
+    capacity = models.PositiveIntegerField()
+    is_accessible = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["code"]
+        constraints = [
+            models.CheckConstraint(check=models.Q(capacity__gt=0), name="classroom_capacity_positive")
+        ]
+
+    def __str__(self):
+        return f"{self.code} - {self.name}"
 
 
 class SubjectOffering(TimeStampedModel):

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import {
-  createAcademicProgram,
+  createCatalogItemByType,
   createPeriod,
   createSubject,
   createSubjectGroup,
@@ -9,7 +9,7 @@ import {
   createSpaceType,
   createTimeSlot,
   createWorkingDay,
-  deleteAcademicProgram,
+  deactivateCatalogItemByType,
   deletePeriod,
   deleteSubject,
   deleteSubjectGroup,
@@ -17,7 +17,9 @@ import {
   deleteSpaceType,
   deleteTimeSlot,
   deleteWorkingDay,
-  listAcademicPrograms,
+  importMasterData,
+  listCatalogItemsByType,
+  listImportTemplates,
   listPeriods,
   listSubjects,
   listSubjectGroups,
@@ -25,7 +27,7 @@ import {
   listSpaceTypes,
   listTimeSlots,
   listWorkingDays,
-  updateAcademicProgram,
+  updateCatalogItemByType,
   updatePeriod,
   updateSubject,
   updateSubjectGroup,
@@ -34,6 +36,22 @@ import {
   updateTimeSlot,
   updateWorkingDay,
 } from "../services/configApi";
+
+function buildCatalogResource(catalogType) {
+  return {
+    list: (token) => listCatalogItemsByType(token, catalogType),
+    create: (token, payload) => createCatalogItemByType(token, catalogType, payload),
+    update: (token, id, payload) =>
+      updateCatalogItemByType(token, catalogType, id, payload),
+    remove: (token, id) => deactivateCatalogItemByType(token, catalogType, id),
+    defaultForm: {
+      name: "",
+      description: "",
+      is_active: true,
+    },
+    fieldOrder: ["name", "description", "is_active"],
+  };
+}
 
 const RESOURCE_CONFIG = {
   academicPrograms: {
@@ -137,19 +155,104 @@ const RESOURCE_CONFIG = {
     },
     fieldOrder: ["name", "start_time", "end_time", "is_active"],
   },
-  spaceTypes: {
-    list: listSpaceTypes,
-    create: createSpaceType,
-    update: updateSpaceType,
-    remove: deleteSpaceType,
-    defaultForm: {
-      name: "",
-      description: "",
-      is_active: true,
-    },
-    fieldOrder: ["name", "description", "is_active"],
-  },
+  teacherLinkTypes: buildCatalogResource("teacher_link_type"),
+  classTypes: buildCatalogResource("class_type"),
+  academicSpaceTypes: buildCatalogResource("academic_space_type"),
 };
+
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function buildDuplicateMatcher(resourceKey, form) {
+  if (resourceKey === "periods") {
+    return (item) => normalizeText(item.code).toLowerCase() === normalizeText(form.code).toLowerCase();
+  }
+
+  if (resourceKey === "workingDays") {
+    return (item) => Number(item.day_of_week) === Number(form.day_of_week);
+  }
+
+  if (resourceKey === "timeSlots") {
+    return (item) =>
+      normalizeText(item.name).toLowerCase() === normalizeText(form.name).toLowerCase() &&
+      item.start_time === form.start_time &&
+      item.end_time === form.end_time;
+  }
+
+  return (item) => normalizeText(item.name).toLowerCase() === normalizeText(form.name).toLowerCase();
+}
+
+function validateForm(resourceKey, resourceState) {
+  const { form, items, editId } = resourceState;
+
+  if (resourceKey === "periods") {
+    if (!normalizeText(form.code)) {
+      return "El codigo del periodo es obligatorio.";
+    }
+    if (!normalizeText(form.name)) {
+      return "El nombre del periodo es obligatorio.";
+    }
+    if (!form.start_date || !form.end_date) {
+      return "Completa las fechas de inicio y fin del periodo.";
+    }
+    if (form.start_date > form.end_date) {
+      return "La fecha de fin debe ser mayor o igual a la fecha de inicio.";
+    }
+  }
+
+  if (resourceKey === "workingDays") {
+    if (!normalizeText(form.name)) {
+      return "El nombre del dia laborable es obligatorio.";
+    }
+
+    const dayOfWeek = Number(form.day_of_week);
+    if (!Number.isInteger(dayOfWeek) || dayOfWeek < 1 || dayOfWeek > 7) {
+      return "El dia laborable debe estar entre 1 y 7.";
+    }
+  }
+
+  if (resourceKey === "timeSlots") {
+    if (!normalizeText(form.name)) {
+      return "El nombre de la franja es obligatorio.";
+    }
+    if (!form.start_time || !form.end_time) {
+      return "Completa la hora de inicio y fin de la franja.";
+    }
+    if (form.start_time >= form.end_time) {
+      return "La hora de fin debe ser mayor a la hora de inicio.";
+    }
+  }
+
+  if (
+    resourceKey === "teacherLinkTypes" ||
+    resourceKey === "classTypes" ||
+    resourceKey === "academicSpaceTypes"
+  ) {
+    if (!normalizeText(form.name)) {
+      return "El nombre del catalogo es obligatorio.";
+    }
+  }
+
+  const isDuplicate = items
+    .filter((item) => item.id !== editId)
+    .some(buildDuplicateMatcher(resourceKey, form));
+
+  if (isDuplicate) {
+    if (resourceKey === "periods") {
+      return "Ya existe un periodo con ese codigo.";
+    }
+    if (resourceKey === "workingDays") {
+      return "Ya existe ese dia laborable.";
+    }
+    if (resourceKey === "timeSlots") {
+      return "Ya existe una franja con ese nombre y horario.";
+    }
+    return "Ya existe un valor para este tipo de catalogo con ese nombre.";
+  }
+
+  return "";
+}
 
 function buildInitialState() {
   return {
@@ -209,9 +312,25 @@ function buildInitialState() {
       submitting: false,
       error: "",
     },
-    spaceTypes: {
+    teacherLinkTypes: {
       items: [],
-      form: { ...RESOURCE_CONFIG.spaceTypes.defaultForm },
+      form: { ...RESOURCE_CONFIG.teacherLinkTypes.defaultForm },
+      editId: null,
+      loading: false,
+      submitting: false,
+      error: "",
+    },
+    classTypes: {
+      items: [],
+      form: { ...RESOURCE_CONFIG.classTypes.defaultForm },
+      editId: null,
+      loading: false,
+      submitting: false,
+      error: "",
+    },
+    academicSpaceTypes: {
+      items: [],
+      form: { ...RESOURCE_CONFIG.academicSpaceTypes.defaultForm },
       editId: null,
       loading: false,
       submitting: false,
@@ -221,9 +340,18 @@ function buildInitialState() {
 }
 
 function normalizePayload(resourceKey, form) {
+  if (resourceKey === "periods") {
+    return {
+      ...form,
+      code: normalizeText(form.code),
+      name: normalizeText(form.name),
+    };
+  }
+
   if (resourceKey === "workingDays") {
     return {
       ...form,
+      name: normalizeText(form.name),
       day_of_week: Number(form.day_of_week),
     };
   }
@@ -251,6 +379,25 @@ function normalizePayload(resourceKey, form) {
       credits: Number(form.credits),
       weekly_hours: Number(form.weekly_hours),
       capacity: Number(form.capacity),
+    };
+  }
+
+  if (resourceKey === "timeSlots") {
+    return {
+      ...form,
+      name: normalizeText(form.name),
+    };
+  }
+
+  if (
+    resourceKey === "teacherLinkTypes" ||
+    resourceKey === "classTypes" ||
+    resourceKey === "academicSpaceTypes"
+  ) {
+    return {
+      ...form,
+      name: normalizeText(form.name),
+      description: normalizeText(form.description),
     };
   }
 
@@ -293,6 +440,14 @@ function mapItemToForm(resourceKey, item) {
 
 export function useSystemConfig({ authToken, enabled, role }) {
   const [state, setState] = useState(buildInitialState());
+  const [importState, setImportState] = useState({
+    templates: [],
+    selectedResourceType: "class_type",
+    file: null,
+    submitting: false,
+    error: "",
+    result: null,
+  });
 
   const getResourceKeysForRole = (role) => {
     if (role === "coordinador") {
@@ -353,13 +508,126 @@ export function useSystemConfig({ authToken, enabled, role }) {
     await Promise.all(keys.map((key) => loadResource(key)));
   };
 
+  const loadImportTemplates = async () => {
+    if (!authToken) {
+      return;
+    }
+
+    try {
+      const response = await listImportTemplates(authToken);
+      const templates = response.templates || [];
+
+      setImportState((previous) => ({
+        ...previous,
+        templates,
+        selectedResourceType:
+          templates.find((item) => item.resource_type === previous.selectedResourceType)
+            ?.resource_type || templates[0]?.resource_type || previous.selectedResourceType,
+      }));
+    } catch (error) {
+      setImportState((previous) => ({
+        ...previous,
+        error: error.message || "No fue posible cargar las plantillas de importacion.",
+      }));
+    }
+  };
+
   useEffect(() => {
     if (!enabled) {
       return;
     }
 
     refreshAll(role);
+    loadImportTemplates();
   }, [authToken, enabled, role]);
+
+  const handleImportFieldChange = (field, value) => {
+    setImportState((previous) => ({
+      ...previous,
+      [field]: value,
+      error: "",
+    }));
+  };
+
+  const handleImportSubmit = async (event) => {
+    event.preventDefault();
+    if (!authToken) {
+      return;
+    }
+
+    if (!importState.file) {
+      setImportState((previous) => ({
+        ...previous,
+        error: "Debes seleccionar un archivo CSV o XLSX.",
+      }));
+      return;
+    }
+
+    const fileName = (importState.file.name || "").toLowerCase();
+    if (!fileName.endsWith(".csv") && !fileName.endsWith(".xlsx")) {
+      setImportState((previous) => ({
+        ...previous,
+        error: "Solo se permiten archivos CSV y XLSX.",
+      }));
+      return;
+    }
+
+    setImportState((previous) => ({
+      ...previous,
+      submitting: true,
+      error: "",
+      result: null,
+    }));
+
+    try {
+      const result = await importMasterData(
+        authToken,
+        importState.selectedResourceType,
+        importState.file,
+      );
+
+      setImportState((previous) => ({
+        ...previous,
+        submitting: false,
+        file: null,
+        result,
+      }));
+
+      await refreshAll();
+    } catch (error) {
+      setImportState((previous) => ({
+        ...previous,
+        submitting: false,
+        error: error.message || "No fue posible importar los datos.",
+      }));
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    const selectedTemplate = importState.templates.find(
+      (template) => template.resource_type === importState.selectedResourceType,
+    );
+
+    if (!selectedTemplate?.headers?.length) {
+      setImportState((previous) => ({
+        ...previous,
+        error: "No hay plantilla disponible para el tipo seleccionado.",
+      }));
+      return;
+    }
+
+    const csvContent = `${selectedTemplate.headers.join(",")}\n`;
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = url;
+    link.setAttribute("download", `plantilla_${selectedTemplate.resource_type}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
 
   const handleFieldChange = (resourceKey, field, value) => {
     if (resourceKey === "subjectOfferings" && field === "subject_id") {
@@ -436,6 +704,16 @@ export function useSystemConfig({ authToken, enabled, role }) {
     const resourceApi = RESOURCE_CONFIG[resourceKey];
     const resourceStateSnapshot = state[resourceKey];
 
+    const validationError = validateForm(resourceKey, resourceStateSnapshot);
+    if (validationError) {
+      setResourceState(resourceKey, (resourceState) => ({
+        ...resourceState,
+        submitting: false,
+        error: validationError,
+      }));
+      return;
+    }
+
     setResourceState(resourceKey, (resourceState) => ({
       ...resourceState,
       submitting: true,
@@ -470,8 +748,12 @@ export function useSystemConfig({ authToken, enabled, role }) {
 
   return {
     configState: state,
+    importState,
     refreshAll: () => refreshAll(role),
     handleFieldChange,
+    handleDownloadTemplate,
+    handleImportFieldChange,
+    handleImportSubmit,
     handleSelectEdit,
     handleDelete,
     handleSubmit,

@@ -1,6 +1,15 @@
 from django.db import IntegrityError, transaction
 
-from apps.core.models import AcademicPeriod, AcademicProgram, SpaceType, Subject, SubjectGroup, TimeSlot, WorkingDay
+from apps.core.models import (
+    AcademicPeriod,
+    AcademicProgram,
+    CatalogItem,
+    SpaceType,
+    Subject,
+    SubjectGroup,
+    TimeSlot,
+    WorkingDay,
+)
 
 
 class ConfigServiceError(Exception):
@@ -8,28 +17,77 @@ class ConfigServiceError(Exception):
 
 
 class ConfigValidationError(ConfigServiceError):
-    pass
+    def __init__(self, message, field=None):
+        super().__init__(message)
+        self.field = field
 
 
 def _normalize_name(name):
     return (name or "").strip()
 
 
+def _normalize_required_text(value, *, field, empty_message):
+    normalized = (value or "").strip()
+    if not normalized:
+        raise ConfigValidationError(empty_message, field=field)
+    return normalized
+
+
+def _normalize_required_code(code):
+    normalized_code = (code or "").strip()
+    if not normalized_code:
+        raise ConfigValidationError("El codigo del periodo es obligatorio.", field="code")
+    return normalized_code
+
+
 def _validate_period(start_date, end_date):
     if start_date > end_date:
         raise ConfigValidationError(
-            "La fecha de fin debe ser mayor o igual a la fecha de inicio."
+            "La fecha de fin debe ser mayor o igual a la fecha de inicio.",
+            field="end_date",
         )
 
 
 def _validate_day_of_week(day_of_week):
     if day_of_week < 1 or day_of_week > 7:
-        raise ConfigValidationError("El dia laborable debe estar entre 1 y 7.")
+        raise ConfigValidationError("El dia laborable debe estar entre 1 y 7.", field="day_of_week")
 
 
 def _validate_time_range(start_time, end_time):
     if start_time >= end_time:
-        raise ConfigValidationError("La hora de fin debe ser mayor a la hora de inicio.")
+        raise ConfigValidationError("La hora de fin debe ser mayor a la hora de inicio.", field="end_time")
+
+
+def _validate_catalog_type(catalog_type):
+    valid_types = {choice for choice, _label in CatalogItem.CatalogType.choices}
+    if catalog_type not in valid_types:
+        raise ConfigValidationError("El tipo de catalogo no es valido.", field="catalog_type")
+
+
+def _ensure_period_code_unique(code, *, exclude_id=None):
+    queryset = AcademicPeriod.objects.filter(code__iexact=code)
+    if exclude_id is not None:
+        queryset = queryset.exclude(id=exclude_id)
+    if queryset.exists():
+        raise ConfigValidationError("Ya existe un periodo con ese codigo.", field="code")
+
+
+def _ensure_space_type_name_unique(name, *, exclude_id=None):
+    queryset = SpaceType.objects.filter(name__iexact=name)
+    if exclude_id is not None:
+        queryset = queryset.exclude(id=exclude_id)
+    if queryset.exists():
+        raise ConfigValidationError("Ya existe un tipo de espacio con ese nombre.", field="name")
+
+
+def _ensure_catalog_item_name_unique(catalog_type, name, *, exclude_id=None):
+    queryset = CatalogItem.objects.filter(catalog_type=catalog_type, name__iexact=name)
+    if exclude_id is not None:
+        queryset = queryset.exclude(id=exclude_id)
+    if queryset.exists():
+        raise ConfigValidationError(
+            "Ya existe un valor para este tipo de catalogo con ese nombre.", field="name"
+        )
 
 
 def _validate_code(code):
@@ -80,26 +138,40 @@ def _calculate_difficulty(*, weekly_hours, capacity):
 
 @transaction.atomic
 def create_academic_period(*, code, name, start_date, end_date, is_active=True):
+    normalized_code = _normalize_required_code(code)
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del periodo es obligatorio.",
+    )
     _validate_period(start_date, end_date)
+    _ensure_period_code_unique(normalized_code)
 
     try:
         return AcademicPeriod.objects.create(
-            code=code.strip(),
-            name=_normalize_name(name),
+            code=normalized_code,
+            name=normalized_name,
             start_date=start_date,
             end_date=end_date,
             is_active=is_active,
         )
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe un periodo con ese codigo.") from exc
+        raise ConfigValidationError("Ya existe un periodo con ese codigo.", field="code") from exc
 
 
 @transaction.atomic
 def update_academic_period(period, *, code, name, start_date, end_date, is_active):
+    normalized_code = _normalize_required_code(code)
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del periodo es obligatorio.",
+    )
     _validate_period(start_date, end_date)
+    _ensure_period_code_unique(normalized_code, exclude_id=period.id)
 
-    period.code = code.strip()
-    period.name = _normalize_name(name)
+    period.code = normalized_code
+    period.name = normalized_name
     period.start_date = start_date
     period.end_date = end_date
     period.is_active = is_active
@@ -107,61 +179,83 @@ def update_academic_period(period, *, code, name, start_date, end_date, is_activ
     try:
         period.save()
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe un periodo con ese codigo.") from exc
+        raise ConfigValidationError("Ya existe un periodo con ese codigo.", field="code") from exc
 
     return period
 
 
 @transaction.atomic
 def create_working_day(*, day_of_week, name, is_active=True):
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del dia laborable es obligatorio.",
+    )
     _validate_day_of_week(day_of_week)
 
     try:
         return WorkingDay.objects.create(
             day_of_week=day_of_week,
-            name=_normalize_name(name),
+            name=normalized_name,
             is_active=is_active,
         )
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe ese dia laborable.") from exc
+        raise ConfigValidationError("Ya existe ese dia laborable.", field="day_of_week") from exc
 
 
 @transaction.atomic
 def update_working_day(working_day, *, day_of_week, name, is_active):
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del dia laborable es obligatorio.",
+    )
     _validate_day_of_week(day_of_week)
 
     working_day.day_of_week = day_of_week
-    working_day.name = _normalize_name(name)
+    working_day.name = normalized_name
     working_day.is_active = is_active
 
     try:
         working_day.save()
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe ese dia laborable.") from exc
+        raise ConfigValidationError("Ya existe ese dia laborable.", field="day_of_week") from exc
 
     return working_day
 
 
 @transaction.atomic
 def create_time_slot(*, name, start_time, end_time, is_active=True):
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre de la franja es obligatorio.",
+    )
     _validate_time_range(start_time, end_time)
 
     try:
         return TimeSlot.objects.create(
-            name=_normalize_name(name),
+            name=normalized_name,
             start_time=start_time,
             end_time=end_time,
             is_active=is_active,
         )
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe una franja con ese nombre y horario.") from exc
+        raise ConfigValidationError(
+            "Ya existe una franja con ese nombre y horario.", field="name"
+        ) from exc
 
 
 @transaction.atomic
 def update_time_slot(time_slot, *, name, start_time, end_time, is_active):
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre de la franja es obligatorio.",
+    )
     _validate_time_range(start_time, end_time)
 
-    time_slot.name = _normalize_name(name)
+    time_slot.name = normalized_name
     time_slot.start_time = start_time
     time_slot.end_time = end_time
     time_slot.is_active = is_active
@@ -169,35 +263,101 @@ def update_time_slot(time_slot, *, name, start_time, end_time, is_active):
     try:
         time_slot.save()
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe una franja con ese nombre y horario.") from exc
+        raise ConfigValidationError(
+            "Ya existe una franja con ese nombre y horario.", field="name"
+        ) from exc
 
     return time_slot
 
 
 @transaction.atomic
 def create_space_type(*, name, description="", is_active=True):
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del tipo de espacio es obligatorio.",
+    )
+    _ensure_space_type_name_unique(normalized_name)
+
     try:
         return SpaceType.objects.create(
-            name=_normalize_name(name),
+            name=normalized_name,
             description=(description or "").strip(),
             is_active=is_active,
         )
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe un tipo de espacio con ese nombre.") from exc
+        raise ConfigValidationError("Ya existe un tipo de espacio con ese nombre.", field="name") from exc
 
 
 @transaction.atomic
 def update_space_type(space_type, *, name, description, is_active):
-    space_type.name = _normalize_name(name)
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del tipo de espacio es obligatorio.",
+    )
+    _ensure_space_type_name_unique(normalized_name, exclude_id=space_type.id)
+
+    space_type.name = normalized_name
     space_type.description = (description or "").strip()
     space_type.is_active = is_active
 
     try:
         space_type.save()
     except IntegrityError as exc:
-        raise ConfigValidationError("Ya existe un tipo de espacio con ese nombre.") from exc
+        raise ConfigValidationError("Ya existe un tipo de espacio con ese nombre.", field="name") from exc
 
     return space_type
+
+
+@transaction.atomic
+def create_catalog_item(*, catalog_type, name, description="", is_active=True):
+    _validate_catalog_type(catalog_type)
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del catalogo es obligatorio.",
+    )
+    _ensure_catalog_item_name_unique(catalog_type, normalized_name)
+
+    try:
+        return CatalogItem.objects.create(
+            catalog_type=catalog_type,
+            name=normalized_name,
+            description=(description or "").strip(),
+            is_active=is_active,
+        )
+    except IntegrityError as exc:
+        raise ConfigValidationError(
+            "Ya existe un valor para este tipo de catalogo con ese nombre.", field="name"
+        ) from exc
+
+
+@transaction.atomic
+def update_catalog_item(catalog_item, *, name, description, is_active):
+    normalized_name = _normalize_required_text(
+        name,
+        field="name",
+        empty_message="El nombre del catalogo es obligatorio.",
+    )
+    _ensure_catalog_item_name_unique(
+        catalog_item.catalog_type,
+        normalized_name,
+        exclude_id=catalog_item.id,
+    )
+
+    catalog_item.name = normalized_name
+    catalog_item.description = (description or "").strip()
+    catalog_item.is_active = is_active
+
+    try:
+        catalog_item.save()
+    except IntegrityError as exc:
+        raise ConfigValidationError(
+            "Ya existe un valor para este tipo de catalogo con ese nombre.", field="name"
+        ) from exc
+
+    return catalog_item
 
 
 @transaction.atomic

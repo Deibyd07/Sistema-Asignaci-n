@@ -1,27 +1,38 @@
 from django.contrib.auth.models import AnonymousUser, User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from datetime import date, time
+from io import BytesIO
+from openpyxl import Workbook
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import (
     AcademicPeriod,
     AcademicProgram,
+    Campus,
+    CatalogItem,
+    Classroom,
+    Course,
+    CourseGroup,
     Role,
     Subject,
     SubjectGroup,
     SubjectOffering,
+    Teacher,
     UserProfile,
     WorkingDay,
 )
 from .services.config_service import (
     ConfigValidationError,
     create_academic_period,
+    create_catalog_item,
     create_space_type,
     create_time_slot,
     create_working_day,
     update_academic_period,
+    update_catalog_item,
     update_space_type,
     update_time_slot,
     update_working_day,
@@ -802,6 +813,23 @@ class SystemConfigApiTests(BaseAuthTestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("end_date", response.data)
 
+    def test_period_name_whitespace_is_rejected(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.post(
+            reverse("config-periods-list-create"),
+            {
+                "code": "2026-W",
+                "name": "   ",
+                "start_date": "2026-02-01",
+                "end_date": "2026-06-01",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("name", response.data)
+
     def test_invalid_timeslot_range_is_rejected(self):
         self.login_and_set_auth("admin@test.com", "adminpassword123")
 
@@ -917,6 +945,357 @@ class SystemConfigApiTests(BaseAuthTestCase):
         self.assertGreaterEqual(len(days_response.data), 1)
         self.assertGreaterEqual(len(slots_response.data), 1)
         self.assertGreaterEqual(len(types_response.data), 1)
+
+    def test_admin_can_manage_catalogs_by_type(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        create_response = self.client.post(
+            reverse("catalogs-list-create", kwargs={"catalog_type": "teacher_link_type"}),
+            {
+                "name": "Catedra",
+                "description": "Docente por hora",
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_response.data["catalog_type"], "teacher_link_type")
+
+        item_id = create_response.data["id"]
+        update_response = self.client.patch(
+            reverse(
+                "catalogs-detail",
+                kwargs={"catalog_type": "teacher_link_type", "config_id": item_id},
+            ),
+            {"name": "Tiempo Completo"},
+            format="json",
+        )
+        self.assertEqual(update_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_response.data["name"], "Tiempo Completo")
+
+        list_response = self.client.get(
+            reverse("catalogs-list-create", kwargs={"catalog_type": "teacher_link_type"}),
+        )
+        self.assertEqual(list_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(any(item["id"] == item_id for item in list_response.data))
+
+    def test_delete_catalog_item_deactivates_record(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        item = CatalogItem.objects.create(
+            catalog_type="class_type",
+            name="Teorica",
+            description="Clase magistral",
+            is_active=True,
+        )
+
+        response = self.client.delete(
+            reverse(
+                "catalogs-detail",
+                kwargs={"catalog_type": "class_type", "config_id": item.id},
+            )
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        item.refresh_from_db()
+        self.assertFalse(item.is_active)
+
+    def test_non_admin_cannot_modify_catalog_items(self):
+        self.login_and_set_auth("coord@test.com", "coordpassword123")
+
+        create_response = self.client.post(
+            reverse("catalogs-list-create", kwargs={"catalog_type": "class_type"}),
+            {"name": "Laboratorio"},
+            format="json",
+        )
+        self.assertEqual(create_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_catalogs_reject_invalid_type(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.get(
+            reverse("catalogs-list-create", kwargs={"catalog_type": "invalid_type"}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_catalog_rejects_case_insensitive_duplicate_name(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        first = self.client.post(
+            reverse("catalogs-list-create", kwargs={"catalog_type": "class_type"}),
+            {"name": "Magistral", "description": "Clase teorica"},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        duplicate = self.client.post(
+            reverse("catalogs-list-create", kwargs={"catalog_type": "class_type"}),
+            {"name": "magistral", "description": "Mismo nombre"},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("name", duplicate.data)
+
+    def test_import_master_data_accepts_csv_with_row_report(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        csv_content = (
+            "name,description,is_active\n"
+            "Magistral,Clase teorica,true\n"
+            "Magistral,Duplicado,true\n"
+            "Laboratorio,Clase practica,true\n"
+        )
+        csv_file = SimpleUploadedFile(
+            "class_types.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("imports-master-data"),
+            {"resource_type": "class_type", "file": csv_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["resource_type"], "class_type")
+        self.assertEqual(response.data["total_processed"], 3)
+        self.assertEqual(response.data["successful"], 2)
+        self.assertEqual(response.data["failed"], 1)
+        self.assertTrue(any(row["status"] == "error" for row in response.data["rows"]))
+
+    def test_import_master_data_accepts_xlsx(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        workbook = Workbook()
+        worksheet = workbook.active
+        worksheet.append(["code", "name", "start_date", "end_date", "is_active"])
+        worksheet.append(["2027-1", "Periodo 2027-1", "2027-01-15", "2027-06-15", "true"])
+
+        buffer = BytesIO()
+        workbook.save(buffer)
+        xlsx_file = SimpleUploadedFile(
+            "periods.xlsx",
+            buffer.getvalue(),
+            content_type=(
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            ),
+        )
+
+        response = self.client.post(
+            reverse("imports-master-data"),
+            {"resource_type": "periods", "file": xlsx_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["total_processed"], 1)
+        self.assertEqual(response.data["successful"], 1)
+        self.assertEqual(response.data["failed"], 0)
+
+    def test_import_master_data_reports_missing_columns(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        csv_content = "name,is_active\nSoloNombre,true\n"
+        csv_file = SimpleUploadedFile(
+            "working_days.csv",
+            csv_content.encode("utf-8"),
+            content_type="text/csv",
+        )
+
+        response = self.client.post(
+            reverse("imports-master-data"),
+            {"resource_type": "working_days", "file": csv_file},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("file", response.data)
+
+    def test_import_templates_list_is_available(self):
+        self.login_and_set_auth("admin@test.com", "adminpassword123")
+
+        response = self.client.get(reverse("imports-master-data"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn("templates", response.data)
+        self.assertTrue(any(item["resource_type"] == "periods" for item in response.data["templates"]))
+
+
+class MasterDataApiTests(BaseAuthTestCase):
+    def setUp(self):
+        self.admin_user = self.create_user(
+            email="admin.master@test.com",
+            password="adminpassword123",
+            role=self.admin_role,
+            first_name="Ana",
+            last_name="Admin",
+        )
+        self.coordinator_user = self.create_user(
+            email="coord.master@test.com",
+            password="coordpassword123",
+            role=self.coordinator_role,
+            first_name="Carlos",
+            last_name="Coord",
+        )
+
+        self.teacher_link_type = CatalogItem.objects.create(
+            catalog_type="teacher_link_type",
+            name="Catedra",
+            description="Docente por horas",
+        )
+        self.class_type = CatalogItem.objects.create(
+            catalog_type="class_type",
+            name="Magistral",
+            description="Clase teorica",
+        )
+        self.space_type = CatalogItem.objects.create(
+            catalog_type="academic_space_type",
+            name="Aula",
+            description="Salon convencional",
+        )
+
+    def test_admin_can_crud_and_filter_master_data(self):
+        self.login_and_set_auth("admin.master@test.com", "adminpassword123")
+
+        campus_response = self.client.post(
+            reverse("campuses-list-create"),
+            {"code": "BOL", "name": "Bolivar", "is_active": True},
+            format="json",
+        )
+        self.assertEqual(campus_response.status_code, status.HTTP_201_CREATED)
+        campus_id = campus_response.data["id"]
+
+        program_response = self.client.post(
+            reverse("programs-list-create"),
+            {
+                "code": "SIS",
+                "name": "Ingenieria de Sistemas",
+                "campus_id": campus_id,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(program_response.status_code, status.HTTP_201_CREATED)
+        program_id = program_response.data["id"]
+
+        teacher_response = self.client.post(
+            reverse("teachers-list-create"),
+            {
+                "first_name": "Lucia",
+                "last_name": "Perez",
+                "email": "lucia.perez@test.com",
+                "link_type_id": self.teacher_link_type.id,
+                "hourly_rate": "55000.00",
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(teacher_response.status_code, status.HTTP_201_CREATED)
+
+        course_response = self.client.post(
+            reverse("courses-list-create"),
+            {
+                "code": "INF101",
+                "name": "Programacion I",
+                "academic_program_id": program_id,
+                "class_type_id": self.class_type.id,
+                "credits": 3,
+                "weekly_hours": 4,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(course_response.status_code, status.HTTP_201_CREATED)
+        course_id = course_response.data["id"]
+
+        group_response = self.client.post(
+            reverse("course-groups-list-create"),
+            {
+                "course_id": course_id,
+                "identifier": "Grupo A",
+                "student_count": 35,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(group_response.status_code, status.HTTP_201_CREATED)
+
+        classroom_response = self.client.post(
+            reverse("classrooms-list-create"),
+            {
+                "code": "SAL-101",
+                "name": "Salon 101",
+                "campus_id": campus_id,
+                "space_type_id": self.space_type.id,
+                "capacity": 40,
+                "is_accessible": True,
+                "is_active": True,
+            },
+            format="json",
+        )
+        self.assertEqual(classroom_response.status_code, status.HTTP_201_CREATED)
+
+        filtered_courses = self.client.get(
+            reverse("courses-list-create"),
+            {"academic_program_id": program_id, "search": "INF"},
+        )
+        self.assertEqual(filtered_courses.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(filtered_courses.data), 1)
+
+        filtered_classrooms = self.client.get(
+            reverse("classrooms-list-create"),
+            {"campus_id": campus_id, "is_accessible": "true"},
+        )
+        self.assertEqual(filtered_classrooms.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(filtered_classrooms.data), 1)
+
+        filtered_groups = self.client.get(
+            reverse("course-groups-list-create"),
+            {"course_id": course_id},
+        )
+        self.assertEqual(filtered_groups.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(filtered_groups.data), 1)
+
+    def test_duplicate_group_for_same_course_is_rejected(self):
+        self.login_and_set_auth("admin.master@test.com", "adminpassword123")
+
+        campus = Campus.objects.create(code="BAL", name="Balsas")
+        program = AcademicProgram.objects.create(code="IND", name="Industrial", campus=campus)
+        course = Course.objects.create(
+            code="MAT101",
+            name="Calculo",
+            academic_program=program,
+            class_type=self.class_type,
+            credits=4,
+            weekly_hours=4,
+        )
+
+        first = self.client.post(
+            reverse("course-groups-list-create"),
+            {"course_id": course.id, "identifier": "Grupo 1", "student_count": 30},
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+
+        duplicate = self.client.post(
+            reverse("course-groups-list-create"),
+            {"course_id": course.id, "identifier": "Grupo 1", "student_count": 28},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_non_admin_cannot_create_master_data_records(self):
+        self.login_and_set_auth("coord.master@test.com", "coordpassword123")
+
+        response = self.client.post(
+            reverse("campuses-list-create"),
+            {"code": "OTR", "name": "Otra sede"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class PermissionUtilityTests(TestCase):
@@ -1096,5 +1475,83 @@ class ConfigServiceTests(TestCase):
                 aula,
                 name="Laboratorio Avanzado",
                 description="Duplicado",
+                is_active=True,
+            )
+
+    def test_catalog_item_create_update_and_duplicate_validation(self):
+        vinculo_1 = create_catalog_item(
+            catalog_type="teacher_link_type",
+            name="Catedra",
+            description="Vinculacion por horas",
+            is_active=True,
+        )
+        vinculo_2 = create_catalog_item(
+            catalog_type="teacher_link_type",
+            name="Tiempo Completo",
+            description="Planta",
+            is_active=True,
+        )
+
+        updated = update_catalog_item(
+            vinculo_1,
+            name="Catedra Externa",
+            description="Horas por semestre",
+            is_active=False,
+        )
+        self.assertEqual(updated.name, "Catedra Externa")
+        self.assertFalse(updated.is_active)
+
+        with self.assertRaises(ConfigValidationError):
+            update_catalog_item(
+                vinculo_2,
+                name="Catedra Externa",
+                description="Duplicado",
+                is_active=True,
+            )
+
+    def test_catalog_item_validates_catalog_type(self):
+        with self.assertRaises(ConfigValidationError):
+            create_catalog_item(
+                catalog_type="otro",
+                name="Invalido",
+                description="No deberia crearse",
+                is_active=True,
+            )
+
+    def test_period_code_duplicate_is_case_insensitive(self):
+        create_academic_period(
+            code="2026-A",
+            name="Periodo A",
+            start_date=date(2026, 1, 10),
+            end_date=date(2026, 5, 20),
+            is_active=True,
+        )
+
+        with self.assertRaises(ConfigValidationError):
+            create_academic_period(
+                code="2026-a",
+                name="Periodo A duplicado",
+                start_date=date(2026, 7, 1),
+                end_date=date(2026, 11, 20),
+                is_active=True,
+            )
+
+    def test_whitespace_names_are_rejected(self):
+        with self.assertRaises(ConfigValidationError):
+            create_working_day(day_of_week=1, name="   ", is_active=True)
+
+        with self.assertRaises(ConfigValidationError):
+            create_time_slot(
+                name="   ",
+                start_time=time(8, 0),
+                end_time=time(9, 0),
+                is_active=True,
+            )
+
+        with self.assertRaises(ConfigValidationError):
+            create_catalog_item(
+                catalog_type="class_type",
+                name="   ",
+                description="No valido",
                 is_active=True,
             )
